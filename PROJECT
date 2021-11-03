@@ -1,0 +1,16 @@
+domain: open-cluster-management.io
+layout:
+- go.kubebuilder.io/v3
+projectName: managed-serviceaccount
+repo: open-cluster-management.io/managed-serviceaccount
+resources:
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: open-cluster-management.io
+  group: authentication
+  kind: ManagedServiceAccount
+  path: open-cluster-management.io/managed-serviceaccount/api/v1alpha1
+  version: v1alpha1
+version: "3"
