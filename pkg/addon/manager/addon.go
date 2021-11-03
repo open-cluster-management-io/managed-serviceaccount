@@ -20,20 +20,22 @@ import (
 
 var _ agent.AgentAddon = &managedServiceAccountAddonAgent{}
 
-func NewManagedServiceAccountAddonAgent(c kubernetes.Interface) agent.AgentAddon {
+func NewManagedServiceAccountAddonAgent(c kubernetes.Interface, imageName string) agent.AgentAddon {
 	return &managedServiceAccountAddonAgent{
 		nativeClient: c,
+		imageName:    imageName,
 	}
 }
 
 type managedServiceAccountAddonAgent struct {
 	nativeClient kubernetes.Interface
+	imageName    string
 }
 
 func (m *managedServiceAccountAddonAgent) Manifests(cluster *clusterv1.ManagedCluster, addon *v1alpha1.ManagedClusterAddOn) ([]runtime.Object, error) {
 	namespace := addon.Spec.InstallNamespace
 	return []runtime.Object{
-		newAddonAgentDeployment(namespace),
+		newAddonAgentDeployment(namespace, m.imageName),
 	}, nil
 }
 
@@ -100,7 +102,7 @@ func (m *managedServiceAccountAddonAgent) setupPermission(cluster *clusterv1.Man
 	return nil
 }
 
-func newAddonAgentDeployment(namespace string) *appsv1.Deployment {
+func newAddonAgentDeployment(namespace string, imageName string) *appsv1.Deployment {
 	const secretName = "managed-serviceaccount-hub-kubeconfig"
 	return &appsv1.Deployment{
 		TypeMeta: metav1.TypeMeta{
@@ -108,27 +110,27 @@ func newAddonAgentDeployment(namespace string) *appsv1.Deployment {
 			Kind:       "Deployment",
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "dummy",
+			Name:      "managed-serviceaccount-addon-agent",
 			Namespace: namespace,
 		},
 		Spec: appsv1.DeploymentSpec{
 			Replicas: pointer.Int32(1),
 			Selector: &metav1.LabelSelector{
 				MatchLabels: map[string]string{
-					"foo": "bar",
+					"addon-agent": "managed-serviceaccount",
 				},
 			},
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: map[string]string{
-						"foo": "bar",
+						"addon-agent": "managed-serviceaccount",
 					},
 				},
 				Spec: corev1.PodSpec{
 					Containers: []corev1.Container{
 						{
-							Name:  "foo",
-							Image: "nginx",
+							Name:  "addon-agent",
+							Image: imageName,
 							VolumeMounts: []corev1.VolumeMount{
 								{
 									Name:      "hub-kubeconfig",

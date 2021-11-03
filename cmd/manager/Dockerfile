@@ -23,14 +23,14 @@ RUN GOPROXY="https://goproxy.cn/,direct" \
     GOARCH=amd64 \
     GO111MODULE=on \
     go build \
-        -a -o agent \
-        cmd/agent/main.go
+        -a -o manager \
+        cmd/manager/main.go
 
 # Use distroless as minimal base image to package the manager binary
 # Refer to https://github.com/GoogleContainerTools/distroless for more details
 FROM alpine:3.13
 
 WORKDIR /
-COPY --from=builder /workspace/agent /
+COPY --from=builder /workspace/manager /
 
-ENTRYPOINT ["/agent"]
+ENTRYPOINT ["/manager"]

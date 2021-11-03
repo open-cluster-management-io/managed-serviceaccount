@@ -19,9 +19,6 @@ package main
 import (
 	"context"
 	"flag"
-	"k8s.io/client-go/kubernetes"
-	"open-cluster-management.io/addon-framework/pkg/addonmanager"
-	"open-cluster-management.io/managed-serviceaccount/pkg/addon/manager"
 	"os"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
@@ -30,7 +27,10 @@ import (
 
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	"k8s.io/client-go/kubernetes"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"open-cluster-management.io/addon-framework/pkg/addonmanager"
+	"open-cluster-management.io/managed-serviceaccount/pkg/addon/manager"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
@@ -56,8 +56,11 @@ func main() {
 	var metricsAddr string
 	var enableLeaderElection bool
 	var probeAddr string
+	var addonAgentImageName string
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":38080", "The address the metric endpoint binds to.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":38081", "The address the probe endpoint binds to.")
+	flag.StringVar(&addonAgentImageName, "agent-image-name", "yue9944882/managed-serviceaccount-addon-agent:v0.0.0",
+		"The image name of the addon agent")
 	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
@@ -112,7 +115,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	err = addonManager.AddAgent(manager.NewManagedServiceAccountAddonAgent(nativeClient))
+	err = addonManager.AddAgent(manager.NewManagedServiceAccountAddonAgent(nativeClient, addonAgentImageName))
 	if err != nil {
 		setupLog.Error(err, "unable to register addon agent")
 		os.Exit(1)
