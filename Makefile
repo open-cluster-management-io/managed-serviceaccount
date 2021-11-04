@@ -1,6 +1,8 @@
 
 # Image URL to use all building/pushing image targets
 IMG ?= controller:latest
+IMG_REGISTRY ?= registry.cn-beijing.aliyuncs.com/open_cluster_management
+IMG_TAG ?= v0.0.23
 # Produce CRDs that work back to Kubernetes 1.11 (no version conversion)
 CRD_OPTIONS ?= "crd:trivialVersions=true,preserveUnknownFields=false"
 
@@ -106,3 +108,13 @@ GOBIN=$(PROJECT_DIR)/bin go get $(2) ;\
 rm -rf $$TMP_DIR ;\
 }
 endef
+
+agent-image:
+	docker build \
+		-t ${IMG_REGISTRY}/managed-serviceaccount-addon-agent:${IMG_TAG} \
+		-f cmd/agent/Dockerfile .
+
+manager-image:
+	docker build \
+		-t ${IMG_REGISTRY}/managed-serviceaccount-addon-manager:${IMG_TAG} \
+		-f cmd/manager/Dockerfile .

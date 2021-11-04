@@ -11,6 +11,7 @@ import (
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/client-go/tools/record"
 	authv1alpha1 "open-cluster-management.io/managed-serviceaccount/api/v1alpha1"
 	"open-cluster-management.io/managed-serviceaccount/pkg/addon/agent/controller"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -54,27 +55,8 @@ func main() {
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 
-	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
-		Namespace:              clusterName,
-		Scheme:                 scheme,
-		MetricsBindAddress:     metricsAddr,
-		Port:                   9443,
-		HealthProbeBindAddress: probeAddr,
-		LeaderElection:         enableLeaderElection,
-		LeaderElectionID:       "3f3caf4f.open-cluster-management.io",
-	})
-	if err != nil {
-		setupLog.Error(err, "unable to start manager")
-		os.Exit(1)
-	}
-
-	hubNativeClient, err := kubernetes.NewForConfig(mgr.GetConfig())
-	if err != nil {
-		setupLog.Error(err, "unable to instantiate kubernetes native client")
-		os.Exit(1)
-	}
-
 	var spokeCfg *rest.Config
+	var err error
 	if len(spokeKubeconfig) > 0 {
 		spokeCfg, err = clientcmd.BuildConfigFromFlags("", spokeKubeconfig)
 		if err != nil {
@@ -88,6 +70,28 @@ func main() {
 			os.Exit(1)
 		}
 	}
+	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
+		Namespace:              clusterName,
+		Scheme:                 scheme,
+		MetricsBindAddress:     metricsAddr,
+		Port:                   9443,
+		HealthProbeBindAddress: probeAddr,
+		LeaderElection:         enableLeaderElection,
+		LeaderElectionID:       "managed-serviceaccount-addon-agent",
+		LeaderElectionConfig:   spokeCfg,
+		EventBroadcaster:       record.NewBroadcaster(),
+	})
+	if err != nil {
+		setupLog.Error(err, "unable to start manager")
+		os.Exit(1)
+	}
+
+	hubNativeClient, err := kubernetes.NewForConfig(mgr.GetConfig())
+	if err != nil {
+		setupLog.Error(err, "unable to instantiate kubernetes native client")
+		os.Exit(1)
+	}
+
 	spokeNativeClient, err := kubernetes.NewForConfig(spokeCfg)
 	if err != nil {
 		setupLog.Error(err, "failed to build a spoke kubernetes client")

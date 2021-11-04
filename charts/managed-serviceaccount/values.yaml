@@ -1,0 +1,8 @@
+# Image of the managed service-account instances
+managerImage: registry-vpc.cn-beijing.aliyuncs.com/open_cluster_management/managed-serviceaccount-addon-manager:v0.0.23
+agentImage: registry-vpc.cn-beijing.aliyuncs.com/open_cluster_management/managed-serviceaccount-addon-agent:v0.0.21
+
+# Number of replicas
+replicas: 3
+
+targetCluster: vela-dev

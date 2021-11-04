@@ -2,8 +2,11 @@ package controller
 
 import (
 	"context"
-	"k8s.io/client-go/rest"
+	"io/ioutil"
 	"time"
+
+	authv1alpha1 "open-cluster-management.io/managed-serviceaccount/api/v1alpha1"
+	"open-cluster-management.io/managed-serviceaccount/pkg/common"
 
 	"github.com/pkg/errors"
 	authv1 "k8s.io/api/authentication/v1"
@@ -11,10 +14,11 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
-	authv1alpha1 "open-cluster-management.io/managed-serviceaccount/api/v1alpha1"
+	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
@@ -30,11 +34,14 @@ type TokenReconciler struct {
 }
 
 func (r *TokenReconciler) Reconcile(ctx context.Context, request reconcile.Request) (reconcile.Result, error) {
+	logger := log.FromContext(ctx)
+	logger.Info("Start reconciling")
 	managed := &authv1alpha1.ManagedServiceAccount{}
 	if err := r.Cache.Get(ctx, request.NamespacedName, managed); err != nil {
 		if !apierrors.IsNotFound(err) {
 			return reconcile.Result{}, errors.Wrapf(err, "no such managed service account")
 		}
+		logger.Info("No such resource")
 		return reconcile.Result{}, nil
 	}
 
@@ -43,6 +50,7 @@ func (r *TokenReconciler) Reconcile(ctx context.Context, request reconcile.Reque
 	}
 
 	if !r.shouldCreateToken(managed) {
+		logger.Info("Skipped creating token")
 		return reconcile.Result{}, nil
 	}
 
@@ -50,10 +58,20 @@ func (r *TokenReconciler) Reconcile(ctx context.Context, request reconcile.Reque
 	if err != nil {
 		return reconcile.Result{}, errors.Wrapf(err, "failed to request token for service-account")
 	}
+
+	caData := r.SpokeClientConfig.CAData
+	if len(caData) == 0 {
+		var err error
+		caData, err = ioutil.ReadFile(r.SpokeClientConfig.CAFile)
+		if err != nil {
+			return reconcile.Result{}, errors.Wrapf(err, "failed to read CA data from file")
+		}
+	}
+
 	status := authv1alpha1.ManagedServiceAccountStatus{
 		Token:               token,
 		ExpirationTimestamp: &expiring,
-		CACertificateData:   r.SpokeClientConfig.CAData,
+		CACertificateData:   caData,
 	}
 
 	munged := managed.DeepCopy()
@@ -62,6 +80,7 @@ func (r *TokenReconciler) Reconcile(ctx context.Context, request reconcile.Reque
 		return reconcile.Result{}, errors.Wrapf(err, "failed to update status")
 	}
 
+	logger.Info("Refreshed token")
 	return reconcile.Result{}, nil
 }
 
@@ -77,6 +96,9 @@ func (r *TokenReconciler) ensureServiceAccount(managed *authv1alpha1.ManagedServ
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: r.SpokeNamespace,
 			Name:      managed.Name,
+			Labels: map[string]string{
+				common.LabelKeyIsManagedServiceAccount: "true",
+			},
 		},
 	}
 	if _, err := r.SpokeNativeClient.CoreV1().
@@ -104,8 +126,13 @@ func (r *TokenReconciler) shouldCreateToken(managed *authv1alpha1.ManagedService
 }
 
 func (r *TokenReconciler) createToken(managed *authv1alpha1.ManagedServiceAccount) (string, metav1.Time, error) {
+	var expirationSec = int64(managed.Spec.Rotation.Validity.Seconds())
 	tr, err := r.SpokeNativeClient.CoreV1().ServiceAccounts(r.SpokeNamespace).
-		CreateToken(context.TODO(), managed.Name, &authv1.TokenRequest{}, metav1.CreateOptions{})
+		CreateToken(context.TODO(), managed.Name, &authv1.TokenRequest{
+			Spec: authv1.TokenRequestSpec{
+				ExpirationSeconds: &expirationSec,
+			},
+		}, metav1.CreateOptions{})
 	if err != nil {
 		return "", metav1.Time{}, err
 	}

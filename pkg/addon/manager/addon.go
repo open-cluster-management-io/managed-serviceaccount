@@ -35,7 +35,10 @@ type managedServiceAccountAddonAgent struct {
 func (m *managedServiceAccountAddonAgent) Manifests(cluster *clusterv1.ManagedCluster, addon *v1alpha1.ManagedClusterAddOn) ([]runtime.Object, error) {
 	namespace := addon.Spec.InstallNamespace
 	return []runtime.Object{
-		newAddonAgentDeployment(namespace, m.imageName),
+		newServiceAccout(namespace),
+		newAddonAgentRole(namespace),
+		newAddonAgentRoleBinding(namespace),
+		newAddonAgentDeployment(cluster.Name, namespace, m.imageName),
 	}, nil
 }
 
@@ -58,6 +61,11 @@ func (m *managedServiceAccountAddonAgent) setupPermission(cluster *clusterv1.Man
 			Namespace: namespace,
 		},
 		Rules: []rbacv1.PolicyRule{
+			{
+				APIGroups: []string{""},
+				Verbs:     []string{"get", "list", "create", "update", "patch"},
+				Resources: []string{"events"},
+			},
 			{
 				APIGroups: []string{"authentication.open-cluster-management.io"},
 				Verbs:     []string{"get", "list", "watch"},
@@ -102,7 +110,79 @@ func (m *managedServiceAccountAddonAgent) setupPermission(cluster *clusterv1.Man
 	return nil
 }
 
-func newAddonAgentDeployment(namespace string, imageName string) *appsv1.Deployment {
+func newServiceAccout(namespace string) *corev1.ServiceAccount {
+	return &corev1.ServiceAccount{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "v1",
+			Kind:       "ServiceAccount",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: namespace,
+			Name:      "managed-serviceaccount",
+		},
+	}
+}
+
+func newAddonAgentRole(namespace string) *rbacv1.Role {
+	return &rbacv1.Role{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "rbac.authorization.k8s.io/v1",
+			Kind:       "Role",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: namespace,
+			Name:      "open-cluster-management:managed-serviceaccount:addon-agent",
+		},
+		Rules: []rbacv1.PolicyRule{
+			{
+				APIGroups: []string{""},
+				Verbs:     []string{"get", "create", "update", "patch"},
+				Resources: []string{"configmaps"},
+			},
+			{
+				APIGroups: []string{"coordination.k8s.io"},
+				Verbs:     []string{"get", "create", "update", "patch"},
+				Resources: []string{"leases"},
+			},
+			{
+				APIGroups: []string{""},
+				Resources: []string{"serviceaccounts", "serviceaccounts/token"},
+				Verbs:     []string{"create"},
+			},
+			{
+				APIGroups: []string{"authentication.k8s.io"},
+				Resources: []string{"tokenrequests"},
+				Verbs:     []string{"create"},
+			},
+		},
+	}
+}
+
+func newAddonAgentRoleBinding(namespace string) *rbacv1.RoleBinding {
+	return &rbacv1.RoleBinding{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "rbac.authorization.k8s.io/v1",
+			Kind:       "RoleBinding",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: namespace,
+			Name:      "open-cluster-management:managed-serviceaccount:addon-agent",
+		},
+		RoleRef: rbacv1.RoleRef{
+			Kind: "Role",
+			Name: "open-cluster-management:managed-serviceaccount:addon-agent",
+		},
+		Subjects: []rbacv1.Subject{
+			{
+				Kind:      rbacv1.ServiceAccountKind,
+				Name:      "managed-serviceaccount",
+				Namespace: namespace,
+			},
+		},
+	}
+}
+
+func newAddonAgentDeployment(clusterName string, namespace string, imageName string) *appsv1.Deployment {
 	const secretName = "managed-serviceaccount-hub-kubeconfig"
 	return &appsv1.Deployment{
 		TypeMeta: metav1.TypeMeta{
@@ -131,6 +211,21 @@ func newAddonAgentDeployment(namespace string, imageName string) *appsv1.Deploym
 						{
 							Name:  "addon-agent",
 							Image: imageName,
+							Args: []string{
+								"--leader-elect=true",
+								"--cluster-name=" + clusterName,
+								"--kubeconfig=/etc/hub/kubeconfig",
+							},
+							Env: []corev1.EnvVar{
+								{
+									Name: "NAMESPACE",
+									ValueFrom: &corev1.EnvVarSource{
+										FieldRef: &corev1.ObjectFieldSelector{
+											FieldPath: "metadata.namespace",
+										},
+									},
+								},
+							},
 							VolumeMounts: []corev1.VolumeMount{
 								{
 									Name:      "hub-kubeconfig",
@@ -140,6 +235,7 @@ func newAddonAgentDeployment(namespace string, imageName string) *appsv1.Deploym
 							},
 						},
 					},
+					ServiceAccountName: "managed-serviceaccount",
 					Volumes: []corev1.Volume{
 						{
 							Name: "hub-kubeconfig",

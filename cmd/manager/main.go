@@ -78,7 +78,7 @@ func main() {
 		Port:                   9443,
 		HealthProbeBindAddress: probeAddr,
 		LeaderElection:         enableLeaderElection,
-		LeaderElectionID:       "3f3caf4f.open-cluster-management.io",
+		LeaderElectionID:       "managed-serviceaccount-addon-manager",
 	})
 	if err != nil {
 		setupLog.Error(err, "unable to start manager")
