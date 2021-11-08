@@ -35,6 +35,7 @@ type managedServiceAccountAddonAgent struct {
 func (m *managedServiceAccountAddonAgent) Manifests(cluster *clusterv1.ManagedCluster, addon *v1alpha1.ManagedClusterAddOn) ([]runtime.Object, error) {
 	namespace := addon.Spec.InstallNamespace
 	return []runtime.Object{
+		newNamespace(namespace),
 		newServiceAccout(namespace),
 		newAddonAgentRole(namespace),
 		newAddonAgentRoleBinding(namespace),
@@ -108,6 +109,18 @@ func (m *managedServiceAccountAddonAgent) setupPermission(cluster *clusterv1.Man
 		}
 	}
 	return nil
+}
+
+func newNamespace(targetNamespace string) *corev1.Namespace {
+	return &corev1.Namespace{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "v1",
+			Kind:       "Namespace",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: targetNamespace,
+		},
+	}
 }
 
 func newServiceAccout(namespace string) *corev1.ServiceAccount {

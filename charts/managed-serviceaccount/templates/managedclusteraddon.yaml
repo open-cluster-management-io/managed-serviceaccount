@@ -1,3 +1,4 @@
+{{ if .Values.targetCluster }}
 apiVersion: addon.open-cluster-management.io/v1alpha1
 kind: ManagedClusterAddOn
 metadata:
@@ -5,3 +6,4 @@ metadata:
   namespace: {{ .Values.targetCluster }}
 spec:
   installNamespace: "open-cluster-management-managed-serviceaccount"
+{{ end }}
