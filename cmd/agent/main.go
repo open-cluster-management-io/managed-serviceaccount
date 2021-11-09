@@ -12,10 +12,13 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/tools/record"
-	authv1alpha1 "open-cluster-management.io/managed-serviceaccount/api/v1alpha1"
-	"open-cluster-management.io/managed-serviceaccount/pkg/addon/agent/controller"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+
+	authv1alpha1 "open-cluster-management.io/managed-serviceaccount/api/v1alpha1"
+	"open-cluster-management.io/managed-serviceaccount/pkg/addon/agent/controller"
+	"open-cluster-management.io/managed-serviceaccount/pkg/addon/agent/health"
+	"open-cluster-management.io/managed-serviceaccount/pkg/util"
 )
 
 var (
@@ -35,6 +38,7 @@ func main() {
 	var probeAddr string
 	var clusterName string
 	var spokeKubeconfig string
+
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":38080", "The address the metric endpoint binds to.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":38081", "The address the probe endpoint binds to.")
 	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
@@ -99,6 +103,14 @@ func main() {
 	}
 
 	spokeNamespace := os.Getenv("NAMESPACE")
+	if len(spokeNamespace) == 0 {
+		inClusterNamespace, err := util.GetInClusterNamespace()
+		if err != nil {
+			setupLog.Error(err, "the agent should be either running in a container or specify NAMESPACE environment")
+			os.Exit(1)
+		}
+		spokeNamespace = inClusterNamespace
+	}
 	if err = (&controller.TokenReconciler{
 		Cache:             mgr.GetCache(),
 		HubClient:         mgr.GetClient(),
@@ -112,6 +124,14 @@ func main() {
 	}
 
 	ctx, _ := context.WithCancel(ctrl.SetupSignalHandler())
+
+	leaseUpdater, err := health.NewAddonHealthUpdater(mgr.GetConfig(), clusterName)
+	if err != nil {
+		setupLog.Error(err, "unable to create healthiness lease updater", "controller", "ManagedServiceAccount")
+		os.Exit(1)
+	}
+	leaseUpdater.Start(ctx)
+
 	if err := mgr.Start(ctx); err != nil {
 		panic(err)
 	}
