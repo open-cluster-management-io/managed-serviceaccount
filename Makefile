@@ -2,7 +2,7 @@
 # Image URL to use all building/pushing image targets
 IMG ?= controller:latest
 IMG_REGISTRY ?= registry.cn-beijing.aliyuncs.com/open_cluster_management
-IMG_TAG ?= v0.0.24
+IMG_TAG ?= v0.0.26
 # Produce CRDs that work back to Kubernetes 1.11 (no version conversion)
 CRD_OPTIONS ?= "crd:trivialVersions=true,preserveUnknownFields=false"
 

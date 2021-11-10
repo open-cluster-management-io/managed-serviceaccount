@@ -12,6 +12,7 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/tools/record"
+	"k8s.io/klog/v2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
@@ -47,14 +48,16 @@ func main() {
 	flag.StringVar(&clusterName, "cluster-name", "", "The name of the managed cluster.")
 	flag.StringVar(&spokeKubeconfig, "spoke-kubeconfig", "", "The kubeconfig to talk to the managed cluster, "+
 		"will use the in-cluster client if not specified.")
+
 	opts := zap.Options{
 		Development: true,
 	}
 	opts.BindFlags(flag.CommandLine)
+
 	flag.Parse()
 
 	if len(clusterName) == 0 {
-		panic("missing --cluster-name")
+		klog.Fatal("missing --cluster-name")
 	}
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
@@ -64,16 +67,15 @@ func main() {
 	if len(spokeKubeconfig) > 0 {
 		spokeCfg, err = clientcmd.BuildConfigFromFlags("", spokeKubeconfig)
 		if err != nil {
-			setupLog.Error(err, "failed to build a spoke kubernetes client config from --spoke-kubeconfig")
-			os.Exit(1)
+			klog.Fatal("failed to build a spoke cluster client config from --spoke-kubeconfig")
 		}
 	} else {
 		spokeCfg, err = rest.InClusterConfig()
 		if err != nil {
-			setupLog.Error(err, "failed to build a spoke kubernetes in-cluster client config")
-			os.Exit(1)
+			klog.Fatal("failed build a in-cluster spoke cluster client config")
 		}
 	}
+
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Namespace:              clusterName,
 		Scheme:                 scheme,
@@ -86,31 +88,28 @@ func main() {
 		EventBroadcaster:       record.NewBroadcaster(),
 	})
 	if err != nil {
-		setupLog.Error(err, "unable to start manager")
-		os.Exit(1)
+		klog.Fatal("unable to start manager")
 	}
 
 	hubNativeClient, err := kubernetes.NewForConfig(mgr.GetConfig())
 	if err != nil {
-		setupLog.Error(err, "unable to instantiate kubernetes native client")
-		os.Exit(1)
+		klog.Fatal("unable to instantiate a kubernetes native client")
 	}
 
 	spokeNativeClient, err := kubernetes.NewForConfig(spokeCfg)
 	if err != nil {
-		setupLog.Error(err, "failed to build a spoke kubernetes client")
-		os.Exit(1)
+		klog.Fatal("unable to build a spoke kubernetes client")
 	}
 
 	spokeNamespace := os.Getenv("NAMESPACE")
 	if len(spokeNamespace) == 0 {
 		inClusterNamespace, err := util.GetInClusterNamespace()
 		if err != nil {
-			setupLog.Error(err, "the agent should be either running in a container or specify NAMESPACE environment")
-			os.Exit(1)
+			klog.Fatal("the agent should be either running in a container or specify NAMESPACE environment")
 		}
 		spokeNamespace = inClusterNamespace
 	}
+
 	if err = (&controller.TokenReconciler{
 		Cache:             mgr.GetCache(),
 		HubClient:         mgr.GetClient(),
@@ -119,20 +118,19 @@ func main() {
 		SpokeClientConfig: spokeCfg,
 		SpokeNativeClient: spokeNativeClient,
 	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "ManagedServiceAccount")
-		os.Exit(1)
+		klog.Fatalf("unable to create controller %v", "ManagedServiceAccount")
 	}
 
 	ctx, _ := context.WithCancel(ctrl.SetupSignalHandler())
 
 	leaseUpdater, err := health.NewAddonHealthUpdater(mgr.GetConfig(), clusterName)
 	if err != nil {
-		setupLog.Error(err, "unable to create healthiness lease updater", "controller", "ManagedServiceAccount")
-		os.Exit(1)
+		klog.Fatalf("unable to create healthiness lease updater for controller %v", "ManagedServiceAccount")
 	}
 	leaseUpdater.Start(ctx)
 
 	if err := mgr.Start(ctx); err != nil {
-		panic(err)
+		klog.Fatalf("unable to start controller manager: %v", err)
 	}
+
 }

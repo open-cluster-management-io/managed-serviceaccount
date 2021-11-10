@@ -2,13 +2,13 @@ package manager
 
 import (
 	"context"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	applyrbacv1 "k8s.io/client-go/applyconfigurations/rbac/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/utils/pointer"
 	"open-cluster-management.io/addon-framework/pkg/agent"
@@ -58,43 +58,62 @@ func (m *managedServiceAccountAddonAgent) GetAgentAddonOptions() agent.AgentAddo
 func (m *managedServiceAccountAddonAgent) setupPermission(cluster *clusterv1.ManagedCluster, addon *addonv1alpha1.ManagedClusterAddOn) error {
 	namespace := cluster.Name
 	agentUser := "system:open-cluster-management:cluster:" + cluster.Name + ":addon:managed-serviceaccount:agent:addon-agent"
-
-	if _, err := m.nativeClient.RbacV1().Roles(namespace).
-		Apply(
-			context.TODO(),
-			applyrbacv1.Role("open-cluster-management:addon:agent:managed-serviceaccount", namespace).
-				WithRules(
-					applyrbacv1.PolicyRule().
-						WithAPIGroups("").
-						WithVerbs("get", "list", "create", "update", "patch").
-						WithResources("events"),
-					applyrbacv1.PolicyRule().
-						WithAPIGroups("authentication.open-cluster-management.io").
-						WithVerbs("get", "list", "watch").
-						WithResources("managedserviceaccounts"),
-					applyrbacv1.PolicyRule().
-						WithAPIGroups("authentication.open-cluster-management.io").
-						WithVerbs("get", "update", "patch").
-						WithResources("managedserviceaccounts/status"),
-				),
-			metav1.ApplyOptions{}); err != nil {
-		return err
+	role := &rbacv1.Role{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "open-cluster-management:addon:agent:managed-serviceaccount",
+			Namespace: namespace,
+		},
+		Rules: []rbacv1.PolicyRule{
+			{
+				APIGroups: []string{""},
+				Verbs:     []string{"get", "list", "create", "update", "patch"},
+				Resources: []string{"events"},
+			},
+			{
+				APIGroups: []string{"authentication.open-cluster-management.io"},
+				Verbs:     []string{"get", "list", "watch"},
+				Resources: []string{"managedserviceaccounts"},
+			},
+			{
+				APIGroups: []string{"authentication.open-cluster-management.io"},
+				Verbs:     []string{"get", "update", "patch"},
+				Resources: []string{"managedserviceaccounts/status"},
+			},
+		},
+	}
+	roleBinding := &rbacv1.RoleBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "open-cluster-management:addon:agent:managed-serviceaccount",
+			Namespace: namespace,
+		},
+		RoleRef: rbacv1.RoleRef{
+			Kind: "Role",
+			Name: "open-cluster-management:addon:agent:managed-serviceaccount",
+		},
+		Subjects: []rbacv1.Subject{
+			{
+				Kind: rbacv1.UserKind,
+				Name: agentUser,
+			},
+		},
 	}
 
-	if _, err := m.nativeClient.RbacV1().RoleBindings(namespace).
-		Apply(
-			context.TODO(),
-			applyrbacv1.RoleBinding("open-cluster-management:addon:agent:managed-serviceaccount", namespace).
-				WithRoleRef(applyrbacv1.RoleRef().
-					WithKind("Role").
-					WithName("open-cluster-management:addon:agent:managed-serviceaccount")).
-				WithSubjects(applyrbacv1.Subject().
-					WithKind(rbacv1.UserKind).
-					WithName(agentUser)),
-			metav1.ApplyOptions{}); err != nil {
-		return err
+	if _, err := m.nativeClient.RbacV1().Roles(namespace).Create(
+		context.TODO(),
+		role,
+		metav1.CreateOptions{}); err != nil {
+		if !apierrors.IsAlreadyExists(err) {
+			return err
+		}
 	}
-
+	if _, err := m.nativeClient.RbacV1().RoleBindings(namespace).Create(
+		context.TODO(),
+		roleBinding,
+		metav1.CreateOptions{}); err != nil {
+		if !apierrors.IsAlreadyExists(err) {
+			return err
+		}
+	}
 	return nil
 }
 
