@@ -1,8 +1,8 @@
 # Image of the managed service-account instances
-managerImage: yue9944882/managed-serviceaccount-addon-manager:v0.0.29
-agentImage: yue9944882/managed-serviceaccount-addon-agent:v0.0.29
+managerImage: yue9944882/managed-serviceaccount-addon-manager:v0.0.31
+agentImage: yue9944882/managed-serviceaccount-addon-agent:v0.0.31
 
 # Number of replicas
-replicas: 3
+replicas: 1
 
 # targetCluster: test-cluster
