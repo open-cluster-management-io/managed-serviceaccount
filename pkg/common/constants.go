@@ -1,8 +1,9 @@
 package common
 
 const (
-	AddonName = "managed-serviceaccount"
-	AgentName = "addon-agent"
+	AddonName                  = "managed-serviceaccount"
+	AgentName                  = "addon-agent"
+	AddonAgentInstallNamespace = "open-cluster-management-" + AddonName
 
 	HubAddonUserGroup = "system:open-cluster-management:addon:managed-serviceaccount"
 )

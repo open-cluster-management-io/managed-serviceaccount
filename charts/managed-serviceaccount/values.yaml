@@ -1,6 +1,6 @@
 # Image of the managed service-account instances
-managerImage: yue9944882/managed-serviceaccount-addon-manager:v0.0.27
-agentImage: yue9944882/managed-serviceaccount-addon-agent:v0.0.25
+managerImage: yue9944882/managed-serviceaccount-addon-manager:v0.0.29
+agentImage: yue9944882/managed-serviceaccount-addon-agent:v0.0.29
 
 # Number of replicas
 replicas: 3

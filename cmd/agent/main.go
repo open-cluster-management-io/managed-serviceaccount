@@ -127,7 +127,7 @@ func main() {
 	if err != nil {
 		klog.Fatalf("unable to create healthiness lease updater for controller %v", "ManagedServiceAccount")
 	}
-	leaseUpdater.Start(ctx)
+	go leaseUpdater.Start(ctx)
 
 	if err := mgr.Start(ctx); err != nil {
 		klog.Fatalf("unable to start controller manager: %v", err)

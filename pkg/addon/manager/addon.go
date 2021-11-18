@@ -2,11 +2,11 @@ package manager
 
 import (
 	"context"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes"
@@ -52,6 +52,7 @@ func (m *managedServiceAccountAddonAgent) GetAgentAddonOptions() agent.AgentAddo
 			CSRApproveCheck:   agent.ApprovalAllCSRs,
 			PermissionConfig:  m.setupPermission,
 		},
+		InstallStrategy: agent.InstallAllStrategy(common.AddonAgentInstallNamespace),
 	}
 }
 
@@ -60,8 +61,17 @@ func (m *managedServiceAccountAddonAgent) setupPermission(cluster *clusterv1.Man
 	agentUser := "system:open-cluster-management:cluster:" + cluster.Name + ":addon:managed-serviceaccount:agent:addon-agent"
 	role := &rbacv1.Role{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "open-cluster-management:addon:agent:managed-serviceaccount",
+			Name:      "managed-serviceaccount-addon-agent",
 			Namespace: namespace,
+			OwnerReferences: []metav1.OwnerReference{
+				{
+					APIVersion:         "addon.open-cluster-management.io/v1alpha1",
+					Kind:               "ManagedClusterAddOn",
+					UID:                addon.UID,
+					Name:               addon.Name,
+					BlockOwnerDeletion: pointer.Bool(true),
+				},
+			},
 		},
 		Rules: []rbacv1.PolicyRule{
 			{
@@ -79,16 +89,30 @@ func (m *managedServiceAccountAddonAgent) setupPermission(cluster *clusterv1.Man
 				Verbs:     []string{"get", "update", "patch"},
 				Resources: []string{"managedserviceaccounts/status"},
 			},
+			{
+				APIGroups: []string{"coordination.k8s.io"},
+				Verbs:     []string{"*"},
+				Resources: []string{"leases"},
+			},
 		},
 	}
 	roleBinding := &rbacv1.RoleBinding{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "open-cluster-management:addon:agent:managed-serviceaccount",
+			Name:      "managed-serviceaccount-addon-agent",
 			Namespace: namespace,
+			OwnerReferences: []metav1.OwnerReference{
+				{
+					APIVersion:         "addon.open-cluster-management.io/v1alpha1",
+					Kind:               "ManagedClusterAddOn",
+					UID:                addon.UID,
+					Name:               addon.Name,
+					BlockOwnerDeletion: pointer.Bool(true),
+				},
+			},
 		},
 		RoleRef: rbacv1.RoleRef{
 			Kind: "Role",
-			Name: "open-cluster-management:addon:agent:managed-serviceaccount",
+			Name: "managed-serviceaccount-addon-agent",
 		},
 		Subjects: []rbacv1.Subject{
 			{
