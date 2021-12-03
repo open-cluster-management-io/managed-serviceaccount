@@ -37,7 +37,7 @@ func (m *managedServiceAccountAddonAgent) Manifests(cluster *clusterv1.ManagedCl
 	namespace := addon.Spec.InstallNamespace
 	return []runtime.Object{
 		newNamespace(namespace),
-		newServiceAccout(namespace),
+		newServiceAccount(namespace),
 		newAddonAgentRole(namespace),
 		newAddonAgentRoleBinding(namespace),
 		newAddonAgentDeployment(cluster.Name, namespace, m.imageName),
@@ -78,6 +78,11 @@ func (m *managedServiceAccountAddonAgent) setupPermission(cluster *clusterv1.Man
 				APIGroups: []string{""},
 				Verbs:     []string{"get", "list", "create", "update", "patch"},
 				Resources: []string{"events"},
+			},
+			{
+				APIGroups: []string{""},
+				Verbs:     []string{"*"},
+				Resources: []string{"secrets"},
 			},
 			{
 				APIGroups: []string{"authentication.open-cluster-management.io"},
@@ -153,7 +158,7 @@ func newNamespace(targetNamespace string) *corev1.Namespace {
 	}
 }
 
-func newServiceAccout(namespace string) *corev1.ServiceAccount {
+func newServiceAccount(namespace string) *corev1.ServiceAccount {
 	return &corev1.ServiceAccount{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: "v1",

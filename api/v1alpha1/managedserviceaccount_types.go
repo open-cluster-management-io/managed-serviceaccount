@@ -20,28 +20,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// ManagedServiceAccountSpec defines the desired state of ManagedServiceAccount
-type ManagedServiceAccountSpec struct {
-	// Projected prescribes how to persist the credentials from the upstream
-	// service-account.
-	Projected ManagedServiceAccountProjected `json:"projected"`
-	// Rotation is the policy for rotation the credentials.
-	Rotation ManagedServiceAccountRotation `json:"rotation"`
-}
-
-// ManagedServiceAccountStatus defines the observed state of ManagedServiceAccount
-type ManagedServiceAccountStatus struct {
-	// Conditions is the condition list.
-	// +optional
-	Conditions []metav1.Condition `json:"conditions,omitempty"`
-	// Token is the content of the service account token
-	// +optional
-	Token string `json:"token,omitempty"`
-	// ExpirationTimestamp is the time when the token will expire.
-	// +optional
-	ExpirationTimestamp *metav1.Time `json:"expirationTimestamp"`
-	// CACertificateData is the ca certificate of the managed cluster.
-	CACertificateData []byte `json:"caCertificateData,omitempty"`
+func init() {
+	SchemeBuilder.Register(&ManagedServiceAccount{}, &ManagedServiceAccountList{})
 }
 
 //+kubebuilder:object:root=true
@@ -56,15 +36,33 @@ type ManagedServiceAccount struct {
 	Status ManagedServiceAccountStatus `json:"status,omitempty"`
 }
 
-type ManagedServiceAccountProjected struct {
-	// Type is the union discriminator for projection type.
+//+kubebuilder:object:root=true
+
+// ManagedServiceAccountList contains a list of ManagedServiceAccount
+type ManagedServiceAccountList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata,omitempty"`
+	Items           []ManagedServiceAccount `json:"items"`
+}
+
+// ManagedServiceAccountSpec defines the desired state of ManagedServiceAccount
+type ManagedServiceAccountSpec struct {
+	// Rotation is the policy for rotation the credentials.
+	Rotation ManagedServiceAccountRotation `json:"rotation"`
+}
+
+// ManagedServiceAccountStatus defines the observed state of ManagedServiceAccount
+type ManagedServiceAccountStatus struct {
+	// Conditions is the condition list.
 	// +optional
-	// +kubebuilder:default=None
-	Type ProjectionType `json:"type"`
-	// Secret prescribes how to project the upstream service account into
-	// secrets in the hub cluster.
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
+	// ExpirationTimestamp is the time when the token will expire.
 	// +optional
-	Secret *ProjectedSecret `json:"secret,omitempty"`
+	ExpirationTimestamp *metav1.Time `json:"expirationTimestamp,omitempty"`
+	// TokenSecretRef is a reference to the secret resource where we store
+	// the CA certficate and token for the corresponding service account from
+	// the managed cluster.
+	TokenSecretRef *SecretRef `json:"tokenSecretRef,omitempty"`
 }
 
 type ProjectionType string
@@ -73,15 +71,6 @@ const (
 	ProjectionTypeNone   ProjectionType = "None"
 	ProjectionTypeSecret ProjectionType = "Secret"
 )
-
-type ProjectedSecret struct {
-	// Namespace is the namespace of the projected secret
-	Namespace string `json:"namespace"`
-	// Name is the name of the projected secret
-	Name string `json:"name"`
-	// Labels is the additional labels attaching to the projected secret.
-	Labels map[string]string `json:"labels"`
-}
 
 type ManagedServiceAccountRotation struct {
 	// Enabled prescribes whether the service account token will
@@ -95,15 +84,17 @@ type ManagedServiceAccountRotation struct {
 	Validity metav1.Duration `json:"validity"`
 }
 
-//+kubebuilder:object:root=true
-
-// ManagedServiceAccountList contains a list of ManagedServiceAccount
-type ManagedServiceAccountList struct {
-	metav1.TypeMeta `json:",inline"`
-	metav1.ListMeta `json:"metadata,omitempty"`
-	Items           []ManagedServiceAccount `json:"items"`
+type SecretRef struct {
+	// Name is the name of the referenced secret.
+	// +required
+	Name string `json:"name"`
+	// LastRefreshTimestamp is the timestamp when the token in the secret
+	// is refreshed.
+	// +required
+	LastRefreshTimestamp metav1.Time `json:"lastRefreshTimestamp"`
 }
 
-func init() {
-	SchemeBuilder.Register(&ManagedServiceAccount{}, &ManagedServiceAccountList{})
-}
+const (
+	ConditionTypeSecretCreated string = "SecretCreated"
+	ConditionTypeTokenReported string = "TokenReported"
+)

@@ -95,11 +95,9 @@ rules:
       - ""
     resources:
       - configmaps
+      - secrets
     verbs:
-      - get
-      - create
-      - update
-      - patch
+      - "*"
   - apiGroups:
       - coordination.k8s.io
     resources:

@@ -51,15 +51,10 @@ func (s secretEventHandler) process(secret *corev1.Secret, q workqueue.RateLimit
 	if secret.Labels[common.LabelKeyIsManagedServiceAccount] != "true" {
 		return
 	}
-	managedServiceAccountNamespace := secret.Labels[common.LabelKeyManagedServiceAccountNamespace]
-	managedServiceAccountName := secret.Labels[common.LabelKeyManagedServiceAccountName]
-	if len(managedServiceAccountNamespace) > 0 && len(managedServiceAccountName) > 0 {
-		q.Add(reconcile.Request{
-			NamespacedName: types.NamespacedName{
-				Namespace: managedServiceAccountNamespace,
-				Name:      managedServiceAccountName,
-			},
-		})
-	}
-
+	q.Add(reconcile.Request{
+		NamespacedName: types.NamespacedName{
+			Namespace: secret.Namespace,
+			Name:      secret.Name,
+		},
+	})
 }
