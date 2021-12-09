@@ -27,6 +27,12 @@ architecture of an OCM [addon](https://open-cluster-management.io/concepts/addon
 
 ## Install
 
+### Prerequisite
+
+- OCM registration (>= 0.5.0)
+
+### Steps
+
 Installing the addons via the helm charts:
 
 ```shell
