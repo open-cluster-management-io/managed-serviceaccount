@@ -259,6 +259,9 @@ func newAddonAgentDeployment(clusterName string, namespace string, imageName str
 						{
 							Name:  "addon-agent",
 							Image: imageName,
+							Command: []string{
+								"/agent",
+							},
 							Args: []string{
 								"--leader-elect=true",
 								"--cluster-name=" + clusterName,

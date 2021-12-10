@@ -1,7 +1,6 @@
 
 # Image URL to use all building/pushing image targets
-IMG ?= controller:latest
-IMG_REGISTRY ?= registry.cn-beijing.aliyuncs.com/open_cluster_management
+IMG_REGISTRY ?= yue9944882
 IMG_TAG ?= latest
 # Produce CRDs that work back to Kubernetes 1.11 (no version conversion)
 CRD_OPTIONS ?= "crd:trivialVersions=true,preserveUnknownFields=false"
@@ -65,12 +64,6 @@ build: generate fmt vet ## Build manager binary.
 run: manifests generate fmt vet ## Run a controller from your host.
 	go run ./main.go
 
-docker-build: test ## Build docker image with the manager.
-	docker build -t ${IMG} .
-
-docker-push: ## Push docker image with the manager.
-	docker push ${IMG}
-
 ##@ Deployment
 
 install: manifests kustomize ## Install CRDs into the K8s cluster specified in ~/.kube/config.
@@ -109,14 +102,6 @@ rm -rf $$TMP_DIR ;\
 }
 endef
 
-agent-image:
-	docker build \
-		-t ${IMG_REGISTRY}/managed-serviceaccount-addon-agent:${IMG_TAG} \
-		-f cmd/agent/Dockerfile .
-
-manager-image:
-	docker build \
-		-t ${IMG_REGISTRY}/managed-serviceaccount-addon-manager:${IMG_TAG} \
-		-f cmd/manager/Dockerfile .
-
-images: agent-image manager-image
+image:
+	docker build -t ${IMG_REGISTRY}/managed-serviceaccount:${IMG_TAG} \
+		-f cmd/Dockerfile .

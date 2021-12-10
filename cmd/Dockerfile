@@ -23,6 +23,15 @@ RUN GOPROXY="https://goproxy.cn/,direct" \
     GOARCH=amd64 \
     GO111MODULE=on \
     go build \
+        -a -o manager \
+        cmd/manager/main.go
+# Build
+RUN GOPROXY="https://goproxy.cn/,direct" \
+    CGO_ENABLED=0 \
+    GOOS=linux \
+    GOARCH=amd64 \
+    GO111MODULE=on \
+    go build \
         -a -o agent \
         cmd/agent/main.go
 
@@ -31,6 +40,5 @@ RUN GOPROXY="https://goproxy.cn/,direct" \
 FROM alpine:3.13
 
 WORKDIR /
+COPY --from=builder /workspace/manager /
 COPY --from=builder /workspace/agent /
-
-ENTRYPOINT ["/agent"]

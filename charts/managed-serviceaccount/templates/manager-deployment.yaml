@@ -17,6 +17,8 @@ spec:
       containers:
         - name: manager
           image: {{ .Values.managerImage }}
+          command:
+            - /manager
           args:
             - --leader-elect=true
             - --agent-image-name={{ .Values.agentImage }}
