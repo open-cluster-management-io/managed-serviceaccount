@@ -103,7 +103,9 @@ func main() {
 
 	setupLog.Info("starting manager")
 
-	ctx, _ := context.WithCancel(ctrl.SetupSignalHandler())
+	ctx, cancel := context.WithCancel(ctrl.SetupSignalHandler())
+	defer cancel()
+
 	if err := addonManager.Start(ctx); err != nil {
 		setupLog.Error(err, "unable to start addon agent")
 		os.Exit(1)
