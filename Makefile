@@ -1,6 +1,6 @@
 
 # Image URL to use all building/pushing image targets
-IMG_REGISTRY ?= yue9944882
+IMG_REGISTRY ?= quay.io/open-cluster-management
 IMG_TAG ?= latest
 # Produce CRDs that work back to Kubernetes 1.11 (no version conversion)
 CRD_OPTIONS ?= "crd:trivialVersions=true,preserveUnknownFields=false"
