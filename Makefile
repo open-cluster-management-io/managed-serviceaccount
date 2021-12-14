@@ -59,7 +59,8 @@ test: manifests generate fmt vet ## Run tests.
 ##@ Build
 
 build: generate fmt vet ## Build manager binary.
-	go build -o bin/manager main.go
+	go build -o bin/manager cmd/manager/main.go
+	go build -o bin/agent cmd/agent/main.go
 
 run: manifests generate fmt vet ## Run a controller from your host.
 	go run ./main.go
@@ -105,3 +106,9 @@ endef
 image:
 	docker build -t ${IMG_REGISTRY}/managed-serviceaccount:${IMG_TAG} \
 		-f cmd/Dockerfile .
+
+test-integration:
+	@echo "TODO: Run integration test"
+
+test-e2e:
+	@echo "TODO: Run e2e test"

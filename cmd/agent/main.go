@@ -121,7 +121,8 @@ func main() {
 		klog.Fatalf("unable to create controller %v", "ManagedServiceAccount")
 	}
 
-	ctx, _ := context.WithCancel(ctrl.SetupSignalHandler())
+	ctx, cancel := context.WithCancel(ctrl.SetupSignalHandler())
+	defer cancel()
 
 	leaseUpdater, err := health.NewAddonHealthUpdater(mgr.GetConfig(), clusterName)
 	if err != nil {

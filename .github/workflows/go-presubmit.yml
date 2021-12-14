@@ -1,0 +1,86 @@
+name: Go
+
+on:
+  workflow_dispatch: {}
+  push:
+    branches:
+      - main
+      - release-*
+  pull_request:
+    branches:
+      - main
+      - release-*
+
+env:
+  # Common versions
+  GO_VERSION: '1.16'
+  GO_REQUIRED_MIN_VERSION: ''
+  GOPATH: '/home/runner/work/managed-serviceaccount/managed-serviceaccount/go'
+defaults:
+  run:
+    working-directory: go/src/open-cluster-management.io/managed-serviceaccount
+
+jobs:
+  build:
+    name: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout code
+        uses: actions/checkout@v2
+        with:
+          fetch-depth: 1
+          path: go/src/open-cluster-management.io/managed-serviceaccount
+      - name: install Go
+        uses: actions/setup-go@v2
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - name: build
+        run: make build
+  
+  unit:
+    name: unit
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout code
+        uses: actions/checkout@v2
+        with:
+          fetch-depth: 1
+          path: go/src/open-cluster-management.io/managed-serviceaccount
+      - name: install Go
+        uses: actions/setup-go@v2
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - name: unit
+        run: make test
+
+  integration:
+    name: integration
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout code
+        uses: actions/checkout@v2
+        with:
+          fetch-depth: 1
+          path: go/src/open-cluster-management.io/managed-serviceaccount
+      - name: install Go
+        uses: actions/setup-go@v2
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - name: integration
+        run: make test-integration
+  
+  e2e:
+    name: e2e
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout code
+        uses: actions/checkout@v2
+        with:
+          fetch-depth: 1
+          path: go/src/open-cluster-management.io/managed-serviceaccount
+      - name: install Go
+        uses: actions/setup-go@v2
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - name: Run e2e test
+        run: make test-e2e
