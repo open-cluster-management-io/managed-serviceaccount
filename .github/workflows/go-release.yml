@@ -24,7 +24,7 @@ jobs:
         uses: actions/checkout@v2
         with:
           fetch-depth: 1
-          path: go/src/open-cluster-management.io/managed-serviceaccountt ad
+          path: go/src/open-cluster-management.io/managed-serviceaccount
       - name: install Go
         uses: actions/setup-go@v2
         with:
