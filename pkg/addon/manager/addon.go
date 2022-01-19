@@ -21,16 +21,28 @@ import (
 
 var _ agent.AgentAddon = &managedServiceAccountAddonAgent{}
 
-func NewManagedServiceAccountAddonAgent(c kubernetes.Interface, imageName string) agent.AgentAddon {
+func NewManagedServiceAccountAddonAgent(
+	c kubernetes.Interface,
+	imageName string,
+	agentInstallAllStrategy bool,
+) agent.AgentAddon {
+	var agentInstallStrategy *agent.InstallStrategy
+	agentInstallStrategy = nil
+	if agentInstallAllStrategy == true {
+		agentInstallStrategy = agent.InstallAllStrategy(common.AddonAgentInstallNamespace)
+	}
+
 	return &managedServiceAccountAddonAgent{
-		nativeClient: c,
-		imageName:    imageName,
+		nativeClient:         c,
+		imageName:            imageName,
+		agentInstallStrategy: agentInstallStrategy,
 	}
 }
 
 type managedServiceAccountAddonAgent struct {
-	nativeClient kubernetes.Interface
-	imageName    string
+	nativeClient         kubernetes.Interface
+	imageName            string
+	agentInstallStrategy *agent.InstallStrategy
 }
 
 func (m *managedServiceAccountAddonAgent) Manifests(cluster *clusterv1.ManagedCluster, addon *v1alpha1.ManagedClusterAddOn) ([]runtime.Object, error) {
@@ -52,7 +64,7 @@ func (m *managedServiceAccountAddonAgent) GetAgentAddonOptions() agent.AgentAddo
 			CSRApproveCheck:   agent.ApprovalAllCSRs,
 			PermissionConfig:  m.setupPermission,
 		},
-		InstallStrategy: agent.InstallAllStrategy(common.AddonAgentInstallNamespace),
+		InstallStrategy: m.agentInstallStrategy,
 	}
 }
 
