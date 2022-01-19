@@ -52,7 +52,7 @@ func (m *managedServiceAccountAddonAgent) GetAgentAddonOptions() agent.AgentAddo
 			CSRApproveCheck:   agent.ApprovalAllCSRs,
 			PermissionConfig:  m.setupPermission,
 		},
-		InstallStrategy: agent.InstallAllStrategy(common.AddonAgentInstallNamespace),
+		InstallStrategy: nil,
 	}
 }
 
