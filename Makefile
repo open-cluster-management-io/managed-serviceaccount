@@ -104,8 +104,7 @@ rm -rf $$TMP_DIR ;\
 endef
 
 image:
-	docker build -t ${IMG_REGISTRY}/managed-serviceaccount:${IMG_TAG} \
-		-f cmd/Dockerfile .
+	docker build -t ${IMG_REGISTRY}/managed-serviceaccount:latest -f Dockerfile .
 
 test-integration:
 	@echo "TODO: Run integration test"
