@@ -57,7 +57,7 @@ func main() {
 	var addonAgentImageName string
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":38080", "The address the metric endpoint binds to.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":38081", "The address the probe endpoint binds to.")
-	flag.StringVar(&addonAgentImageName, "agent-image-name", "yue9944882/managed-serviceaccount-addon-agent:v0.0.0",
+	flag.StringVar(&addonAgentImageName, "agent-image-name", "open-cluster-management/managed-serviceaccount-addon-agent:v0.0.0",
 		"The image name of the addon agent")
 	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
 		"Enable leader election for controller manager. "+
