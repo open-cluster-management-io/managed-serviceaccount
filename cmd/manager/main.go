@@ -55,6 +55,8 @@ func main() {
 	var enableLeaderElection bool
 	var probeAddr string
 	var addonAgentImageName string
+	var agentInstallAll bool
+
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":38080", "The address the metric endpoint binds to.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":38081", "The address the probe endpoint binds to.")
 	flag.StringVar(&addonAgentImageName, "agent-image-name", "yue9944882/managed-serviceaccount-addon-agent:v0.0.0",
@@ -62,6 +64,11 @@ func main() {
 	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
+	flag.BoolVar(
+		&agentInstallAll, "agent-install-all", false,
+		"Configure the install strategy of agent on managed clusters. "+
+			"Enabling this will automatically install agent on all managed cluster.")
+
 	opts := zap.Options{
 		Development: true,
 	}
@@ -95,7 +102,14 @@ func main() {
 		os.Exit(1)
 	}
 
-	err = addonManager.AddAgent(manager.NewManagedServiceAccountAddonAgent(nativeClient, addonAgentImageName))
+	err = addonManager.AddAgent(
+		manager.NewManagedServiceAccountAddonAgent(
+			nativeClient,
+			addonAgentImageName,
+			agentInstallAll,
+		),
+	)
+
 	if err != nil {
 		setupLog.Error(err, "unable to register addon agent")
 		os.Exit(1)

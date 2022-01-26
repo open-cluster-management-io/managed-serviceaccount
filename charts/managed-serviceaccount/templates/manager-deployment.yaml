@@ -16,9 +16,10 @@ spec:
       serviceAccount: managed-serviceaccount
       containers:
         - name: manager
-          image: {{ .Values.image }}:{{ .Values.tag }}
+          image: "{{ .Values.image }}:{{ .Values.tag }}"
           command:
             - /manager
           args:
             - --leader-elect=true
             - --agent-image-name={{ .Values.image }}:{{ .Values.tag }}
+            - --agent-install-all={{ .Values.agentInstallAll }}
