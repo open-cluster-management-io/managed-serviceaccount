@@ -7,14 +7,19 @@ import (
 	"open-cluster-management.io/managed-serviceaccount/pkg/common"
 )
 
-func NewAddonHealthUpdater(hubClientCfg *rest.Config, clusterName string) (lease.LeaseUpdater, error) {
-	hubClient, err := kubernetes.NewForConfig(hubClientCfg)
+func NewAddonHealthUpdater(
+	hubClientCfg *rest.Config,
+	clusterName string,
+	spokeClientCfg *rest.Config,
+	spokeNamespace string,
+) (lease.LeaseUpdater, error) {
+	spokeClient, err := kubernetes.NewForConfig(spokeClientCfg)
 	if err != nil {
 		return nil, err
 	}
 	return lease.NewLeaseUpdater(
-		hubClient,
+		spokeClient,
 		common.AddonName,
-		clusterName,
-	), nil
+		spokeNamespace,
+	).WithHubLeaseConfig(hubClientCfg, clusterName), nil
 }
