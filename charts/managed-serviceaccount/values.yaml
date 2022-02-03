@@ -5,3 +5,6 @@ agentInstallAll: true
 
 # Number of replicas
 replicas: 1
+
+featureGates:
+  ephemeralIdentity: false
