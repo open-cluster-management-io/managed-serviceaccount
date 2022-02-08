@@ -33,13 +33,27 @@ type TokenReconciler struct {
 	SpokeNativeClient kubernetes.Interface
 	SpokeClientConfig *rest.Config
 	SpokeNamespace    string
+	ClusterName       string
+	SpokeCache        cache.Cache
 }
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *TokenReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&authv1alpha1.ManagedServiceAccount{}).
-		Watches(&source.Kind{Type: &corev1.Secret{}}, event.NewSecretEventHandler()).
+		Watches(
+			&source.Kind{
+				Type: &corev1.Secret{},
+			},
+			event.NewSecretEventHandler(),
+		).
+		Watches(
+			source.NewKindWithCache(
+				&corev1.ServiceAccount{},
+				r.SpokeCache,
+			),
+			event.NewServiceAccountEventHandler(r.ClusterName),
+		).
 		Complete(r)
 }
 
@@ -47,21 +61,27 @@ func (r *TokenReconciler) Reconcile(ctx context.Context, request reconcile.Reque
 	logger := log.FromContext(ctx)
 	logger.Info("Start reconciling")
 	managed := &authv1alpha1.ManagedServiceAccount{}
+
 	if err := r.Cache.Get(ctx, request.NamespacedName, managed); err != nil {
 		if !apierrors.IsNotFound(err) {
-			return reconcile.Result{}, errors.Wrapf(err, "no such managed service account")
+			//fail to get managed-serviceaccount, requeue
+			return reconcile.Result{}, errors.Wrapf(err, "fail to get managed serviceaccount")
 		}
-		logger.Info("No such resource")
+
+		sai := r.SpokeNativeClient.CoreV1().ServiceAccounts(r.SpokeNamespace)
+		if err := sai.Delete(ctx, request.Name, metav1.DeleteOptions{}); err != nil {
+			if !apierrors.IsNotFound(err) {
+				//fail to delete related serviceaccount, requeue
+				return reconcile.Result{}, errors.Wrapf(err, "fail to delete related serviceaccount")
+			}
+		}
+
+		logger.Info("Both ManagedServiceAccount and related ServiceAccount does not exist")
 		return reconcile.Result{}, nil
 	}
 
 	if err := r.ensureServiceAccount(managed); err != nil {
 		return reconcile.Result{}, errors.Wrapf(err, "failed to ensure service account")
-	}
-
-	if !shouldCreateToken(managed) {
-		logger.Info("Skipped creating token")
-		return reconcile.Result{}, nil
 	}
 
 	secretExists := true
@@ -74,6 +94,14 @@ func (r *TokenReconciler) Reconcile(ctx context.Context, request reconcile.Reque
 			return reconcile.Result{}, errors.Wrapf(err, "failed to read current token secret from hub cluster")
 		}
 		secretExists = false
+		currentTokenSecret = nil
+	}
+
+	if shouldCreate, err := r.shouldCreateToken(managed, currentTokenSecret); err != nil {
+		return reconcile.Result{}, errors.Wrapf(err, "failed to make a decision on token creation")
+	} else if !shouldCreate {
+		logger.Info("Skipped creating token")
+		return reconcile.Result{}, nil
 	}
 
 	token, expiring, err := r.createToken(managed)
@@ -197,17 +225,32 @@ func buildSecret(managed *authv1alpha1.ManagedServiceAccount, caData, tokenData 
 	}
 }
 
-func shouldCreateToken(managed *authv1alpha1.ManagedServiceAccount) bool {
-	if managed.Status.TokenSecretRef == nil {
-		return true
+func (r *TokenReconciler) shouldCreateToken(managed *authv1alpha1.ManagedServiceAccount, tokenSecret *corev1.Secret) (bool, error) {
+	if managed.Status.TokenSecretRef == nil || tokenSecret == nil {
+		return true, nil
 	}
+
+	// check if the token should be refreshed
 	now := metav1.Now()
 	refreshThreshold := managed.Spec.Rotation.Validity.Duration / 5 * 4
 	lifetime := managed.Status.ExpirationTimestamp.Sub(now.Time)
 	if lifetime < refreshThreshold {
-		return true
+		return true, nil
 	}
-	return false
+
+	// check if the token is valid or not
+	tokenReview := &authv1.TokenReview{
+		Spec: authv1.TokenReviewSpec{
+			Token: string(tokenSecret.Data[corev1.ServiceAccountTokenKey]),
+		},
+	}
+	tr, err := r.SpokeNativeClient.AuthenticationV1().TokenReviews().Create(
+		context.TODO(), tokenReview, metav1.CreateOptions{})
+	if err != nil {
+		return false, err
+	}
+
+	return !tr.Status.Authenticated, nil
 }
 
 func mergeConditions(old, new []metav1.Condition) []metav1.Condition {
