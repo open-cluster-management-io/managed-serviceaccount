@@ -49,6 +49,19 @@ type ManagedServiceAccountList struct {
 type ManagedServiceAccountSpec struct {
 	// Rotation is the policy for rotation the credentials.
 	Rotation ManagedServiceAccountRotation `json:"rotation"`
+
+	// ttlSecondsAfterCreation limits the lifetime of a ManagedServiceAccount.
+	// If ttlSecondsAfterCreation field is set, the ManagedServiceAccount will be
+	// automatically deleted reguarless of the status of ManagedServiceAccount.
+	// When the ManagedServiceAccount is being deleted, its lifecycle guarantees
+	// (e.g. finalizers) will be honored. If this field is unset, the ManagedServiceAccount
+	// won't be automatically deleted. If this field is set to zero, the
+	// ManagedServiceAccount becomes eligible to be deleted immediately after it creation.
+	// In order to use ttlSecondsAfterCreation, the EphemeralIdentity feature gate must be enabled
+	// +optional
+	//+kubebuilder:validation:ExclusiveMinimum=true
+	//+kubebuilder:validation:Minimum=0
+	TTLSecondsAfterCreation *int32 `json:"ttlSecondsAfterCreation,omitempty"`
 }
 
 // ManagedServiceAccountStatus defines the observed state of ManagedServiceAccount
