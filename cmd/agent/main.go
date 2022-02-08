@@ -5,6 +5,8 @@ import (
 	"flag"
 	"os"
 
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/kubernetes"
@@ -14,11 +16,13 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/klog/v2"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	authv1alpha1 "open-cluster-management.io/managed-serviceaccount/api/v1alpha1"
 	"open-cluster-management.io/managed-serviceaccount/pkg/addon/agent/controller"
 	"open-cluster-management.io/managed-serviceaccount/pkg/addon/agent/health"
+	"open-cluster-management.io/managed-serviceaccount/pkg/common"
 	"open-cluster-management.io/managed-serviceaccount/pkg/util"
 )
 
@@ -110,6 +114,23 @@ func main() {
 		spokeNamespace = inClusterNamespace
 	}
 
+	spokeCache, err := cache.New(spokeCfg, cache.Options{
+		SelectorsByObject: cache.SelectorsByObject{
+			&corev1.ServiceAccount{}: {
+				Label: labels.SelectorFromSet(
+					labels.Set{
+						common.LabelKeyIsManagedServiceAccount: "true",
+					},
+				),
+			},
+		},
+		Namespace: spokeNamespace,
+	})
+	if err != nil {
+		klog.Fatal("unable to instantiate a spoke serviceaccount cache")
+	}
+	mgr.Add(spokeCache)
+
 	if err = (&controller.TokenReconciler{
 		Cache:             mgr.GetCache(),
 		HubClient:         mgr.GetClient(),
@@ -117,6 +138,8 @@ func main() {
 		SpokeNamespace:    spokeNamespace,
 		SpokeClientConfig: spokeCfg,
 		SpokeNativeClient: spokeNativeClient,
+		ClusterName:       clusterName,
+		SpokeCache:        spokeCache,
 	}).SetupWithManager(mgr); err != nil {
 		klog.Fatalf("unable to create controller %v", "ManagedServiceAccount")
 	}
