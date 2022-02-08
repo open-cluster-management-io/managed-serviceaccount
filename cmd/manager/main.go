@@ -20,6 +20,7 @@ import (
 	"context"
 	"flag"
 	"os"
+	"strings"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
@@ -29,12 +30,13 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/kubernetes"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	cliflag "k8s.io/component-base/cli/flag"
 	"open-cluster-management.io/addon-framework/pkg/addonmanager"
+	authv1alpha1 "open-cluster-management.io/managed-serviceaccount/api/v1alpha1"
 	"open-cluster-management.io/managed-serviceaccount/pkg/addon/manager"
+	"open-cluster-management.io/managed-serviceaccount/pkg/features"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
-
-	authv1alpha1 "open-cluster-management.io/managed-serviceaccount/api/v1alpha1"
 	//+kubebuilder:scaffold:imports
 )
 
@@ -45,7 +47,6 @@ var (
 
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
-
 	utilruntime.Must(authv1alpha1.AddToScheme(scheme))
 	//+kubebuilder:scaffold:scheme
 }
@@ -56,6 +57,7 @@ func main() {
 	var probeAddr string
 	var addonAgentImageName string
 	var agentInstallAll bool
+	var featureGatesFlags map[string]bool
 
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":38080", "The address the metric endpoint binds to.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":38081", "The address the probe endpoint binds to.")
@@ -68,12 +70,19 @@ func main() {
 		&agentInstallAll, "agent-install-all", false,
 		"Configure the install strategy of agent on managed clusters. "+
 			"Enabling this will automatically install agent on all managed cluster.")
+	flag.Var(
+		cliflag.NewMapStringBool(&featureGatesFlags),
+		"feature-gates",
+		"A set of key=value pairs that describe feature gates for alpha/experimental features. "+
+			"Options are:\n"+strings.Join(features.FeatureGates.KnownFeatures(), "\n"))
 
 	opts := zap.Options{
 		Development: true,
 	}
 	opts.BindFlags(flag.CommandLine)
+
 	flag.Parse()
+	features.FeatureGates.SetFromMap(featureGatesFlags)
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 
@@ -102,17 +111,25 @@ func main() {
 		os.Exit(1)
 	}
 
-	err = addonManager.AddAgent(
+	if err := addonManager.AddAgent(
 		manager.NewManagedServiceAccountAddonAgent(
 			nativeClient,
 			addonAgentImageName,
 			agentInstallAll,
 		),
-	)
-
-	if err != nil {
+	); err != nil {
 		setupLog.Error(err, "unable to register addon agent")
 		os.Exit(1)
+	}
+
+	if features.FeatureGates.Enabled(features.EphemeralIdentity) {
+		if err := (&manager.EphemeralIdentityReconciler{
+			Cache:     mgr.GetCache(),
+			HubClient: mgr.GetClient(),
+		}).SetupWithManager(mgr); err != nil {
+			setupLog.Error(err, "unable to register EphemeralIdentityReconciler")
+			os.Exit(1)
+		}
 	}
 
 	setupLog.Info("starting manager")
@@ -124,6 +141,7 @@ func main() {
 		setupLog.Error(err, "unable to start addon agent")
 		os.Exit(1)
 	}
+
 	if err := mgr.Start(ctx); err != nil {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)

@@ -50,6 +50,8 @@ func (m *managedServiceAccountAddonAgent) Manifests(cluster *clusterv1.ManagedCl
 	return []runtime.Object{
 		newNamespace(namespace),
 		newServiceAccount(namespace),
+		newAddonAgentClusterRole(namespace),
+		newAddonAgentClusterRoleBinding(namespace),
 		newAddonAgentRole(namespace),
 		newAddonAgentRoleBinding(namespace),
 		newAddonAgentDeployment(cluster.Name, namespace, m.imageName),
@@ -183,6 +185,25 @@ func newServiceAccount(namespace string) *corev1.ServiceAccount {
 	}
 }
 
+func newAddonAgentClusterRole(namespace string) *rbacv1.ClusterRole {
+	return &rbacv1.ClusterRole{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "rbac.authorization.k8s.io/v1",
+			Kind:       "ClusterRole",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "open-cluster-management:managed-serviceaccount:addon-agent",
+		},
+		Rules: []rbacv1.PolicyRule{
+			{
+				APIGroups: []string{"authentication.k8s.io"},
+				Resources: []string{"tokenreviews"},
+				Verbs:     []string{"create"},
+			},
+		},
+	}
+}
+
 func newAddonAgentRole(namespace string) *rbacv1.Role {
 	return &rbacv1.Role{
 		TypeMeta: metav1.TypeMeta{
@@ -207,7 +228,7 @@ func newAddonAgentRole(namespace string) *rbacv1.Role {
 			{
 				APIGroups: []string{""},
 				Resources: []string{"serviceaccounts", "serviceaccounts/token"},
-				Verbs:     []string{"create"},
+				Verbs:     []string{"get", "watch", "list", "create", "delete"},
 			},
 			{
 				APIGroups: []string{"authentication.k8s.io"},
@@ -230,6 +251,28 @@ func newAddonAgentRoleBinding(namespace string) *rbacv1.RoleBinding {
 		},
 		RoleRef: rbacv1.RoleRef{
 			Kind: "Role",
+			Name: "open-cluster-management:managed-serviceaccount:addon-agent",
+		},
+		Subjects: []rbacv1.Subject{
+			{
+				Kind:      rbacv1.ServiceAccountKind,
+				Name:      "managed-serviceaccount",
+				Namespace: namespace,
+			},
+		},
+	}
+}
+func newAddonAgentClusterRoleBinding(namespace string) *rbacv1.ClusterRoleBinding {
+	return &rbacv1.ClusterRoleBinding{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "rbac.authorization.k8s.io/v1",
+			Kind:       "ClusterRoleBinding",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "open-cluster-management:managed-serviceaccount:addon-agent",
+		},
+		RoleRef: rbacv1.RoleRef{
+			Kind: "ClusterRole",
 			Name: "open-cluster-management:managed-serviceaccount:addon-agent",
 		},
 		Subjects: []rbacv1.Subject{
