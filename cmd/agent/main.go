@@ -124,7 +124,7 @@ func main() {
 	ctx, cancel := context.WithCancel(ctrl.SetupSignalHandler())
 	defer cancel()
 
-	leaseUpdater, err := health.NewAddonHealthUpdater(mgr.GetConfig(), clusterName)
+	leaseUpdater, err := health.NewAddonHealthUpdater(mgr.GetConfig(), clusterName, spokeCfg, spokeNamespace)
 	if err != nil {
 		klog.Fatalf("unable to create healthiness lease updater for controller %v", "ManagedServiceAccount")
 	}
