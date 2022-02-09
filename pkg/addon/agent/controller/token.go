@@ -97,9 +97,9 @@ func (r *TokenReconciler) Reconcile(ctx context.Context, request reconcile.Reque
 		currentTokenSecret = nil
 	}
 
-	if shouldCreate, err := r.shouldCreateToken(managed, currentTokenSecret); err != nil {
+	if shouldCreate, err := r.isSoonExpiring(managed, currentTokenSecret); err != nil {
 		return reconcile.Result{}, errors.Wrapf(err, "failed to make a decision on token creation")
-	} else if !shouldCreate {
+	} else if secretExists && !shouldCreate {
 		logger.Info("Skipped creating token")
 		return reconcile.Result{}, nil
 	}
@@ -225,7 +225,7 @@ func buildSecret(managed *authv1alpha1.ManagedServiceAccount, caData, tokenData 
 	}
 }
 
-func (r *TokenReconciler) shouldCreateToken(managed *authv1alpha1.ManagedServiceAccount, tokenSecret *corev1.Secret) (bool, error) {
+func (r *TokenReconciler) isSoonExpiring(managed *authv1alpha1.ManagedServiceAccount, tokenSecret *corev1.Secret) (bool, error) {
 	if managed.Status.TokenSecretRef == nil || tokenSecret == nil {
 		return true, nil
 	}
