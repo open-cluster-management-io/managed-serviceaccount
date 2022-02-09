@@ -96,7 +96,7 @@ func (m *managedServiceAccountAddonAgent) setupPermission(cluster *clusterv1.Man
 			{
 				APIGroups: []string{""},
 				Verbs:     []string{"*"},
-				Resources: []string{"secrets"},
+				Resources: []string{"secrets", "configmaps"},
 			},
 			{
 				APIGroups: []string{"authentication.open-cluster-management.io"},
@@ -312,8 +312,9 @@ func newAddonAgentDeployment(clusterName string, namespace string, imageName str
 				Spec: corev1.PodSpec{
 					Containers: []corev1.Container{
 						{
-							Name:  "addon-agent",
-							Image: imageName,
+							Name:            "addon-agent",
+							Image:           imageName,
+							ImagePullPolicy: corev1.PullIfNotPresent,
 							Command: []string{
 								"/agent",
 							},
