@@ -37,6 +37,9 @@ rules:
       - watch
       - update
       - patch
+      {{- if (.Values.featureGates | default dict).ephemeralIdentity }}
+      - delete
+      {{- end }}
   - apiGroups:
       - certificates.k8s.io
     resources:
