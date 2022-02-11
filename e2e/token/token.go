@@ -2,11 +2,13 @@ package token
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 
+	authv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -24,6 +26,7 @@ var _ = Describe("Token Test",
 	func() {
 		f := framework.NewE2EFramework(tokenTestBasename)
 		targetName := "e2e-" + framework.RunID
+
 		It("Token projection should work", func() {
 			msa := &v1alpha1.ManagedServiceAccount{
 				ObjectMeta: metav1.ObjectMeta{
@@ -85,6 +88,10 @@ var _ = Describe("Token Test",
 				Expect(err).NotTo(HaveOccurred())
 				return len(secret.Data[corev1.ServiceAccountTokenKey]) > 0, nil
 			}).WithTimeout(30 * time.Second).Should(BeTrue())
+
+			By("Validate the validitiy of the generated token", func() {
+				validateToken(f, targetName)
+			})
 		})
 
 		It("Token secret deletion should be reconciled", func() {
@@ -98,6 +105,7 @@ var _ = Describe("Token Test",
 				Secrets(f.TestClusterName()).
 				Delete(context.TODO(), latest.Status.TokenSecretRef.Name, metav1.DeleteOptions{})
 			Expect(err).NotTo(HaveOccurred())
+
 			By("Secret should re-created after deletion")
 			Eventually(func() bool {
 				secret := &corev1.Secret{}
@@ -111,5 +119,59 @@ var _ = Describe("Token Test",
 				Expect(err).NotTo(HaveOccurred())
 				return len(secret.Data[corev1.ServiceAccountTokenKey]) > 0
 			}).WithTimeout(30 * time.Second).Should(BeTrue())
+
+			By("Re-validate the re-generated token", func() {
+				validateToken(f, targetName)
+			})
 		})
 	})
+
+func validateToken(f framework.Framework, targetName string) {
+	var err error
+	addon := &addonv1alpha1.ManagedClusterAddOn{}
+	err = f.HubRuntimeClient().Get(context.TODO(), types.NamespacedName{
+		Namespace: f.TestClusterName(),
+		Name:      common.AddonName,
+	}, addon)
+	Expect(err).NotTo(HaveOccurred())
+
+	latest := &v1alpha1.ManagedServiceAccount{}
+	err = f.HubRuntimeClient().Get(context.TODO(), types.NamespacedName{
+		Namespace: f.TestClusterName(),
+		Name:      targetName,
+	}, latest)
+	Expect(err).NotTo(HaveOccurred())
+
+	expectedUserName := fmt.Sprintf(
+		"system:serviceaccount:%s:%s",
+		addon.Spec.InstallNamespace,
+		latest.Name,
+	)
+
+	secret := &corev1.Secret{}
+	err = f.HubRuntimeClient().Get(context.TODO(), types.NamespacedName{
+		Namespace: f.TestClusterName(),
+		Name:      latest.Status.TokenSecretRef.Name,
+	}, secret)
+	Expect(err).NotTo(HaveOccurred())
+
+	token := secret.Data[corev1.ServiceAccountTokenKey]
+	Expect(token).NotTo(BeEmpty())
+	tokenReview := &authv1.TokenReview{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "TokenReview",
+			APIVersion: "authentication.k8s.io/v1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			GenerateName: "token-review-request",
+		},
+		Spec: authv1.TokenReviewSpec{
+			Token: string(token),
+		},
+	}
+	err = f.HubRuntimeClient().Create(context.TODO(), tokenReview)
+	Expect(err).NotTo(HaveOccurred())
+
+	Expect(tokenReview.Status.Authenticated).To(BeTrue())
+	Expect(tokenReview.Status.User.Username).To(Equal(expectedUserName))
+}
