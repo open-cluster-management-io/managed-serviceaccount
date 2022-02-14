@@ -1,0 +1,72 @@
+#!/bin/bash
+
+DEMO_DIR="$( dirname "${BASH_SOURCE[0]}" )"
+ROOT_DIR="$( cd ${DEMO_DIR}/../../.. && pwd)"
+
+. ${DEMO_DIR}/../demo-magic
+
+TYPE_SPEED=30
+DEMO_PROMPT="☸️ $ "
+NO_WAIT=1
+
+function comment() {
+  echo -e '\033[0;33m>>> '$1' <<<\033[0m'
+  wait
+}
+
+comment "hub cluster info"
+pe "oc cluster-info"
+
+comment "validate installation of managed-serviceaccount"
+pe "oc get clustermanagementaddon managed-serviceaccount"
+
+comment "show available managed clusters"
+pe "oc get managedclusters"
+
+comment "select managed cluster"
+echo -n "Enter managed cluster name: "
+read -r managedcluster
+
+#validate managed cluster selection 
+oc get managedcluster ${managedcluster} > /dev/null
+if [ "$?" -ne 0 ]; then
+  exit 1
+fi
+
+oc get managedclusteraddon -n ${managedcluster} managed-serviceaccount > /dev/null
+if [ "$?" -ne 0 ]
+then
+  comment "enable managed-serviceaccount addon for ${managedcluster}"
+  cat templates/managedclusteraddon.yaml | sed s/CLUSTER_NAME/${managedcluster}/g > /tmp/managedclusteraddon.yaml
+  pe "cat /tmp/managedclusteraddon.yaml"
+  pe "oc apply -f /tmp/managedclusteraddon.yaml"
+else
+  comment "check managed-serviceaccount addon for ${managedcluster}"
+  pe "oc get managedclusteraddon -n ${managedcluster} managed-serviceaccount"
+fi
+
+comment "create managedserviceaccount with TTL"
+cat templates/managedserviceaccount.yaml | sed s/CLUSTER_NAME/${managedcluster}/g > /tmp/managedserviceaccount.yaml
+pe "cat /tmp/managedserviceaccount.yaml"
+comment "NOTE: finalizer is place on the resource so we can see resource deletion timestamp"
+pe "oc apply -f /tmp/managedserviceaccount.yaml"
+
+#validate managedserviceaccount is created
+oc get managedserviceaccount -n ${managedcluster} ttl-demo &> /dev/null
+if [ "$?" -ne 0 ]; then
+  exit 1
+fi
+
+comment "sleep till TTL expires"
+sleep 5
+
+comment "show managedserviceaccount function correctly"
+pe "oc get managedserviceaccount -n ${managedcluster} ttl-demo -o yaml"
+comment "CreationTimestamp"
+oc get managedserviceaccount -n ${managedcluster} ttl-demo -o yaml | grep creationTimestamp
+comment "DeletionTimestamp"
+oc get managedserviceaccount -n ${managedcluster} ttl-demo -o yaml | grep deletionTimestamp
+
+comment "remove fianlizer to cleanup demo"
+oc patch managedserviceaccount -n ${managedcluster} ttl-demo -p '{"metadata":{"finalizers":[]}}' --type=merge
+oc get managedserviceaccount -n ${managedcluster} ttl-demo
