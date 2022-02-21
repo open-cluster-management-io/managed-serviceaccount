@@ -31,12 +31,13 @@ import (
 	"k8s.io/client-go/kubernetes"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	cliflag "k8s.io/component-base/cli/flag"
+	"k8s.io/klog/v2"
+	"k8s.io/klog/v2/klogr"
 	"open-cluster-management.io/addon-framework/pkg/addonmanager"
 	authv1alpha1 "open-cluster-management.io/managed-serviceaccount/api/v1alpha1"
 	"open-cluster-management.io/managed-serviceaccount/pkg/addon/manager"
 	"open-cluster-management.io/managed-serviceaccount/pkg/features"
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	//+kubebuilder:scaffold:imports
 )
 
@@ -59,6 +60,9 @@ func main() {
 	var agentInstallAll bool
 	var featureGatesFlags map[string]bool
 
+	logger := klogr.New()
+	klog.SetOutput(os.Stdout)
+	klog.InitFlags(flag.CommandLine)
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":38080", "The address the metric endpoint binds to.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":38081", "The address the probe endpoint binds to.")
 	flag.StringVar(&addonAgentImageName, "agent-image-name", "quay.io/open-cluster-management/managed-serviceaccount:latest",
@@ -76,15 +80,10 @@ func main() {
 		"A set of key=value pairs that describe feature gates for alpha/experimental features. "+
 			"Options are:\n"+strings.Join(features.FeatureGates.KnownFeatures(), "\n"))
 
-	opts := zap.Options{
-		Development: true,
-	}
-	opts.BindFlags(flag.CommandLine)
-
 	flag.Parse()
-	features.FeatureGates.SetFromMap(featureGatesFlags)
 
-	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
+	ctrl.SetLogger(logger)
+	features.FeatureGates.SetFromMap(featureGatesFlags)
 
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme:                 scheme,
