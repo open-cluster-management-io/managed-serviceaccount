@@ -10,6 +10,7 @@ import (
 
 	authv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -124,7 +125,84 @@ var _ = Describe("Token Test",
 				validateToken(f, targetName)
 			})
 		})
-	})
+
+		It("ManagedServiceAccount deletion should delete ServiceAccount", func() {
+			var err error
+
+			addon := &addonv1alpha1.ManagedClusterAddOn{}
+			err = f.HubRuntimeClient().Get(context.TODO(), types.NamespacedName{
+				Namespace: f.TestClusterName(),
+				Name:      common.AddonName,
+			}, addon)
+			Expect(err).NotTo(HaveOccurred())
+
+			msa := &v1alpha1.ManagedServiceAccount{}
+			err = f.HubRuntimeClient().Get(context.TODO(), types.NamespacedName{
+				Namespace: f.TestClusterName(),
+				Name:      targetName,
+			}, msa)
+			Expect(err).NotTo(HaveOccurred())
+
+			secret := &corev1.Secret{}
+			err = f.HubRuntimeClient().Get(context.TODO(), types.NamespacedName{
+				Namespace: f.TestClusterName(),
+				Name:      msa.Status.TokenSecretRef.Name,
+			}, secret)
+			Expect(err).NotTo(HaveOccurred())
+
+			serviceAccount := &corev1.ServiceAccount{}
+			err = f.HubRuntimeClient().Get(context.TODO(), types.NamespacedName{
+				Namespace: addon.Spec.InstallNamespace,
+				Name:      targetName,
+			}, serviceAccount)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Deleting ManagedServiceAccount", func() {
+				err = f.HubRuntimeClient().Delete(context.TODO(), msa)
+				Expect(err).NotTo(HaveOccurred())
+			})
+
+			//managed serviceaccount should be deleted
+			Eventually(func() bool {
+				msa := &v1alpha1.ManagedServiceAccount{}
+				err = f.HubRuntimeClient().Get(context.TODO(), types.NamespacedName{
+					Namespace: f.TestClusterName(),
+					Name:      targetName,
+				}, msa)
+				if errors.IsNotFound(err) {
+					return true
+				}
+				return false
+			}, time.Minute, time.Second).Should(BeTrue())
+
+			//token secret should be deleted
+			Eventually(func() bool {
+				secret := &corev1.Secret{}
+				err = f.HubRuntimeClient().Get(context.TODO(), types.NamespacedName{
+					Namespace: f.TestClusterName(),
+					Name:      msa.Status.TokenSecretRef.Name,
+				}, secret)
+				if errors.IsNotFound(err) {
+					return true
+				}
+				return false
+			}, time.Minute, time.Second).Should(BeTrue())
+
+			//serviceaccount should be deleted
+			Eventually(func() bool {
+				serviceAccount := &corev1.ServiceAccount{}
+				err = f.HubRuntimeClient().Get(context.TODO(), types.NamespacedName{
+					Namespace: addon.Spec.InstallNamespace,
+					Name:      targetName,
+				}, serviceAccount)
+				if errors.IsNotFound(err) {
+					return true
+				}
+				return false
+			}, time.Minute, time.Second).Should(BeTrue())
+		})
+	},
+)
 
 func validateToken(f framework.Framework, targetName string) {
 	var err error
