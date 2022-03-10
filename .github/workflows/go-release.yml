@@ -42,7 +42,13 @@ jobs:
           echo ${{ secrets.DOCKER_PASSWORD }} | docker login quay.io --username ${{ secrets.DOCKER_USER }} --password-stdin
           docker tag quay.io/open-cluster-management/managed-serviceaccount:latest quay.io/open-cluster-management/managed-serviceaccount:$RELEASE_VERSION
           docker push quay.io/open-cluster-management/managed-serviceaccount:$RELEASE_VERSION
+      - name: build chart package
+        run: |
+          helm package ./charts/managed-serviceaccount
       - name: publish release
         uses: softprops/action-gh-release@v0.1.5
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          files: |
+            managed-serviceaccount-${RELEASE_VERSION#v}.tgz
