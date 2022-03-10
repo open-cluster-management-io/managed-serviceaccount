@@ -7,12 +7,10 @@ import (
 	clusterv1 "open-cluster-management.io/api/cluster/v1"
 	authenticationv1alpha1 "open-cluster-management.io/managed-serviceaccount/api/v1alpha1"
 	ctrl "sigs.k8s.io/controller-runtime"
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 )
 
-var (
-	scheme   = runtime.NewScheme()
-	setupLog = ctrl.Log.WithName("setup")
-)
+var scheme = runtime.NewScheme()
 
 func init() {
 	utilruntime.Must(clusterv1.AddToScheme(scheme))
