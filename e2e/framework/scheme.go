@@ -6,7 +6,6 @@ import (
 	addonv1alpha1 "open-cluster-management.io/api/addon/v1alpha1"
 	clusterv1 "open-cluster-management.io/api/cluster/v1"
 	authenticationv1alpha1 "open-cluster-management.io/managed-serviceaccount/api/v1alpha1"
-	ctrl "sigs.k8s.io/controller-runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 )
 
