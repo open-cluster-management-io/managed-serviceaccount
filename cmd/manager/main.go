@@ -27,6 +27,7 @@ import (
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/kubernetes"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -107,6 +108,16 @@ func main() {
 	nativeClient, err := kubernetes.NewForConfig(mgr.GetConfig())
 	if err != nil {
 		setupLog.Error(err, "unable to instantiating kubernetes native client")
+		os.Exit(1)
+	}
+
+	_, err = mgr.GetRESTMapper().ResourceFor(schema.GroupVersionResource{
+		Group:    authv1alpha1.GroupVersion.Group,
+		Version:  authv1alpha1.GroupVersion.Version,
+		Resource: "managedserviceaccounts",
+	})
+	if err != nil {
+		setupLog.Error(err, `no "managedserviceaccounts" resource found in the hub cluster, is the CRD installed?`)
 		os.Exit(1)
 	}
 
