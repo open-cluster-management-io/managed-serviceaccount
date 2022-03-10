@@ -4,6 +4,7 @@ IMG_REGISTRY ?= quay.io/open-cluster-management
 IMG_TAG ?= latest
 # Produce CRDs that work back to Kubernetes 1.11 (no version conversion)
 CRD_OPTIONS ?= "crd:trivialVersions=true,preserveUnknownFields=false"
+E2E_TEST_CLUSTER_NAME ?= loopback
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
@@ -54,13 +55,16 @@ ENVTEST_ASSETS_DIR=$(shell pwd)/testbin
 test: manifests generate fmt vet ## Run tests.
 	mkdir -p ${ENVTEST_ASSETS_DIR}
 	test -f ${ENVTEST_ASSETS_DIR}/setup-envtest.sh || curl -sSLo ${ENVTEST_ASSETS_DIR}/setup-envtest.sh https://raw.githubusercontent.com/kubernetes-sigs/controller-runtime/v0.8.3/hack/setup-envtest.sh
-	source ${ENVTEST_ASSETS_DIR}/setup-envtest.sh; fetch_envtest_tools $(ENVTEST_ASSETS_DIR); setup_envtest_env $(ENVTEST_ASSETS_DIR); go test ./... -coverprofile cover.out
+	source ${ENVTEST_ASSETS_DIR}/setup-envtest.sh; fetch_envtest_tools $(ENVTEST_ASSETS_DIR); setup_envtest_env $(ENVTEST_ASSETS_DIR); go test ./pkg/... -coverprofile cover.out
 
 ##@ Build
 
 build: generate fmt vet ## Build manager binary.
 	go build -o bin/manager cmd/manager/main.go
 	go build -o bin/agent cmd/agent/main.go
+
+build-e2e:
+	go test -c -o bin/e2e ./e2e/
 
 run: manifests generate fmt vet ## Run a controller from your host.
 	go run ./main.go
@@ -109,5 +113,5 @@ image:
 test-integration:
 	@echo "TODO: Run integration test"
 
-test-e2e:
-	@echo "TODO: Run e2e test"
+test-e2e: build-e2e
+	./bin/e2e --test-cluster $(E2E_TEST_CLUSTER_NAME)
