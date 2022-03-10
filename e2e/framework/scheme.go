@@ -15,20 +15,8 @@ var (
 )
 
 func init() {
-	err := clusterv1.AddToScheme(scheme)
-	if err != nil {
-		setupLog.Error(err, "unable to add schema to cluster")
-	}
-	err = addonv1alpha1.AddToScheme(scheme)
-	if err != nil {
-		setupLog.Error(err, "unable to add schema to addonv1alpha1")
-	}
-	err = k8sscheme.AddToScheme(scheme)
-	if err != nil {
-		setupLog.Error(err, "unable to add schema to k8sscheme")
-	}
-	err = authenticationv1alpha1.AddToScheme(scheme)
-	if err != nil {
-		setupLog.Error(err, "unable to add schema to authenticationv1alpha1")
-	}
+	utilruntime.Must(clusterv1.AddToScheme(scheme))
+	utilruntime.Must(addonv1alpha1.AddToScheme(scheme))
+	utilruntime.Must(k8sscheme.AddToScheme(scheme))
+	utilruntime.Must(authenticationv1alpha1.AddToScheme(scheme))
 }
