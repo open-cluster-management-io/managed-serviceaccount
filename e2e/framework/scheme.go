@@ -6,13 +6,29 @@ import (
 	addonv1alpha1 "open-cluster-management.io/api/addon/v1alpha1"
 	clusterv1 "open-cluster-management.io/api/cluster/v1"
 	authenticationv1alpha1 "open-cluster-management.io/managed-serviceaccount/api/v1alpha1"
+	ctrl "sigs.k8s.io/controller-runtime"
 )
 
-var scheme = runtime.NewScheme()
+var (
+	scheme   = runtime.NewScheme()
+	setupLog = ctrl.Log.WithName("setup")
+)
 
 func init() {
-	clusterv1.AddToScheme(scheme)
-	addonv1alpha1.AddToScheme(scheme)
-	k8sscheme.AddToScheme(scheme)
-	authenticationv1alpha1.AddToScheme(scheme)
+	err := clusterv1.AddToScheme(scheme)
+	if err != nil {
+		setupLog.Error(err, "unable to add schema to cluster")
+	}
+	err = addonv1alpha1.AddToScheme(scheme)
+	if err != nil {
+		setupLog.Error(err, "unable to add schema to addonv1alpha1")
+	}
+	err = k8sscheme.AddToScheme(scheme)
+	if err != nil {
+		setupLog.Error(err, "unable to add schema to k8sscheme")
+	}
+	err = authenticationv1alpha1.AddToScheme(scheme)
+	if err != nil {
+		setupLog.Error(err, "unable to add schema to authenticationv1alpha1")
+	}
 }
