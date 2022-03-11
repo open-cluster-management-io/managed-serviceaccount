@@ -84,7 +84,11 @@ func main() {
 	flag.Parse()
 
 	ctrl.SetLogger(logger)
-	features.FeatureGates.SetFromMap(featureGatesFlags)
+	err := features.FeatureGates.SetFromMap(featureGatesFlags)
+	if err != nil {
+		setupLog.Error(err, "unable to set featuregates map")
+		os.Exit(1)
+	}
 
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme:                 scheme,

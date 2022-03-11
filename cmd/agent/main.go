@@ -125,7 +125,10 @@ func main() {
 	if err != nil {
 		klog.Fatal("unable to instantiate a spoke serviceaccount cache")
 	}
-	mgr.Add(spokeCache)
+	err = mgr.Add(spokeCache)
+	if err != nil {
+		klog.Fatal("unable to add spoke cache to manager")
+	}
 
 	if err = (&controller.TokenReconciler{
 		Cache:             mgr.GetCache(),
