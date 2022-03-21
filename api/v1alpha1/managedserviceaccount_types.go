@@ -51,13 +51,13 @@ type ManagedServiceAccountSpec struct {
 	Rotation ManagedServiceAccountRotation `json:"rotation"`
 
 	// ttlSecondsAfterCreation limits the lifetime of a ManagedServiceAccount.
-	// If ttlSecondsAfterCreation field is set, the ManagedServiceAccount will be
-	// automatically deleted reguarless of the status of ManagedServiceAccount.
-	// When the ManagedServiceAccount is being deleted, its lifecycle guarantees
+	// If the ttlSecondsAfterCreation field is set, the ManagedServiceAccount will be
+	// automatically deleted regardless of the ManagedServiceAccount's status.
+	// When the ManagedServiceAccount is deleted, its lifecycle guarantees
 	// (e.g. finalizers) will be honored. If this field is unset, the ManagedServiceAccount
 	// won't be automatically deleted. If this field is set to zero, the
-	// ManagedServiceAccount becomes eligible to be deleted immediately after it creation.
-	// In order to use ttlSecondsAfterCreation, the EphemeralIdentity feature gate must be enabled
+	// ManagedServiceAccount becomes eligible for deletion immediately after its creation.
+	// In order to use ttlSecondsAfterCreation, the EphemeralIdentity feature gate must be enabled.
 	// +optional
 	//+kubebuilder:validation:ExclusiveMinimum=true
 	//+kubebuilder:validation:Minimum=0
@@ -72,9 +72,8 @@ type ManagedServiceAccountStatus struct {
 	// ExpirationTimestamp is the time when the token will expire.
 	// +optional
 	ExpirationTimestamp *metav1.Time `json:"expirationTimestamp,omitempty"`
-	// TokenSecretRef is a reference to the secret resource where we store
-	// the CA certficate and token for the corresponding service account from
-	// the managed cluster.
+	// TokenSecretRef is a reference to the corresponding ServiceAccount's Secret, which stores
+	// the CA certficate and token from the managed cluster.
 	TokenSecretRef *SecretRef `json:"tokenSecretRef,omitempty"`
 }
 
@@ -86,12 +85,12 @@ const (
 )
 
 type ManagedServiceAccountRotation struct {
-	// Enabled prescribes whether the service account token will
+	// Enabled prescribes whether the ServiceAccount token will
 	// be rotated from the upstream
 	// +optional
 	// +kubebuilder:default=true
 	Enabled bool `json:"enabled"`
-	// Validity prescribes how long is the signed service account token valid.
+	// Validity is the duration for which the signed ServiceAccount token is valid.
 	// +optional
 	// +kubebuilder:default="8640h0m0s"
 	Validity metav1.Duration `json:"validity"`
@@ -101,7 +100,7 @@ type SecretRef struct {
 	// Name is the name of the referenced secret.
 	// +required
 	Name string `json:"name"`
-	// LastRefreshTimestamp is the timestamp when the token in the secret
+	// LastRefreshTimestamp is the timestamp indicating when the token in the Secret
 	// is refreshed.
 	// +required
 	LastRefreshTimestamp metav1.Time `json:"lastRefreshTimestamp"`
