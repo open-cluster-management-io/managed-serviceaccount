@@ -39,7 +39,7 @@ var (
 
 func Resource(resource string) schema.GroupResource {
 	return schema.GroupResource{
-		Group:    "managedserviceaccount.open-cluster-management.io",
+		Group:    "authentication.open-cluster-management.io",
 		Resource: resource,
 	}
 }
