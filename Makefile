@@ -112,14 +112,15 @@ image:
 	docker build -t ${IMG_REGISTRY}/managed-serviceaccount:latest -f Dockerfile .
 
 client-gen:
-	go install k8s.io/code-generator/cmd/client-gen@v0.21.2
+	rm -r pkg/apis/managedserviceaccount/* && cp -rp api/v1alpha1 pkg/apis/managedserviceaccount/
 	apiserver-runtime-gen \
  	--module open-cluster-management.io/managed-serviceaccount \
  	-g client-gen \
  	-g informer-gen \
  	-g lister-gen \
- 	--versions=open-cluster-management.io/managed-serviceaccount/api/v1alpha1 \
+ 	--versions=open-cluster-management.io/managed-serviceaccount/pkg/apis/managedserviceaccount/v1alpha1 \
  	--install-generators=false
+
 
 test-integration:
 	@echo "TODO: Run integration test"
