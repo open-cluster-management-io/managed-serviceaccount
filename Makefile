@@ -116,3 +116,11 @@ test-integration:
 
 test-e2e: build-e2e
 	./bin/e2e --test-cluster $(E2E_TEST_CLUSTER_NAME)
+
+client-gen:
+	go install sigs.k8s.io/apiserver-runtime/tools/apiserver-runtime-gen@v1.1.1
+	go install k8s.io/code-generator/cmd/client-gen@v0.21.2
+	apiserver-runtime-gen \
+ 		--module open-cluster-management.io/managed-serviceaccount \
+ 		-g client-gen \
+ 		--versions=open-cluster-management.io/managed-serviceaccount/api/v1alpha1

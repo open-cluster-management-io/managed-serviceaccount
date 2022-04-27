@@ -27,6 +27,7 @@ func init() {
 //+kubebuilder:object:root=true
 //+kubebuilder:subresource:status
 
+// +genclient
 // ManagedServiceAccount is the Schema for the managedserviceaccounts API
 type ManagedServiceAccount struct {
 	metav1.TypeMeta   `json:",inline"`
