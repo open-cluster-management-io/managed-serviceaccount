@@ -69,7 +69,7 @@ func (r *EphemeralIdentityReconciler) Reconcile(ctx context.Context, request rec
 
 	requeueAfter := deletionTime.Sub(currentTime)
 	if requeueAfter < 0 {
-		return reconcile.Result{}, fmt.Errorf("Unexpected error, requeue")
+		return reconcile.Result{}, fmt.Errorf("unexpected error, requeue")
 	}
 
 	return reconcile.Result{
