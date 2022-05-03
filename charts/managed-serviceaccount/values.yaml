@@ -8,3 +8,5 @@ replicas: 1
 
 featureGates:
   ephemeralIdentity: false
+
+agentImagePullSecret: ""

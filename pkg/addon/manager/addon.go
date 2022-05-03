@@ -12,7 +12,6 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/utils/pointer"
 	"open-cluster-management.io/addon-framework/pkg/agent"
-	"open-cluster-management.io/api/addon/v1alpha1"
 	addonv1alpha1 "open-cluster-management.io/api/addon/v1alpha1"
 	clusterv1 "open-cluster-management.io/api/cluster/v1"
 
@@ -21,14 +20,17 @@ import (
 
 var _ agent.AgentAddon = &managedServiceAccountAddonAgent{}
 
+const agentImagePullSecretName = "open-cluster-management-image-pull-credentials"
+
 func NewManagedServiceAccountAddonAgent(
 	c kubernetes.Interface,
 	imageName string,
 	agentInstallAllStrategy bool,
+	agentImagePullSecret *corev1.Secret,
 ) agent.AgentAddon {
 	var agentInstallStrategy *agent.InstallStrategy
 	agentInstallStrategy = nil
-	if agentInstallAllStrategy == true {
+	if agentInstallAllStrategy {
 		agentInstallStrategy = agent.InstallAllStrategy(common.AddonAgentInstallNamespace)
 	}
 
@@ -36,6 +38,7 @@ func NewManagedServiceAccountAddonAgent(
 		nativeClient:         c,
 		imageName:            imageName,
 		agentInstallStrategy: agentInstallStrategy,
+		agentImagePullSecret: agentImagePullSecret,
 	}
 }
 
@@ -43,19 +46,25 @@ type managedServiceAccountAddonAgent struct {
 	nativeClient         kubernetes.Interface
 	imageName            string
 	agentInstallStrategy *agent.InstallStrategy
+	agentImagePullSecret *corev1.Secret
 }
 
-func (m *managedServiceAccountAddonAgent) Manifests(cluster *clusterv1.ManagedCluster, addon *v1alpha1.ManagedClusterAddOn) ([]runtime.Object, error) {
+func (m *managedServiceAccountAddonAgent) Manifests(cluster *clusterv1.ManagedCluster, addon *addonv1alpha1.ManagedClusterAddOn) ([]runtime.Object, error) {
 	namespace := addon.Spec.InstallNamespace
-	return []runtime.Object{
+	manifests := []runtime.Object{
 		newNamespace(namespace),
 		newServiceAccount(namespace),
 		newAddonAgentClusterRole(namespace),
 		newAddonAgentClusterRoleBinding(namespace),
 		newAddonAgentRole(namespace),
 		newAddonAgentRoleBinding(namespace),
-		newAddonAgentDeployment(cluster.Name, namespace, m.imageName),
-	}, nil
+		newAddonAgentDeployment(cluster.Name, namespace, m.imageName, m.agentImagePullSecret),
+	}
+	if m.agentImagePullSecret != nil {
+		manifests = append(manifests, newAddonAgentImagePullSecret(m.agentImagePullSecret, namespace))
+	}
+
+	return manifests, nil
 }
 
 func (m *managedServiceAccountAddonAgent) GetAgentAddonOptions() agent.AgentAddonOptions {
@@ -285,9 +294,24 @@ func newAddonAgentClusterRoleBinding(namespace string) *rbacv1.ClusterRoleBindin
 	}
 }
 
-func newAddonAgentDeployment(clusterName string, namespace string, imageName string) *appsv1.Deployment {
+func newAddonAgentImagePullSecret(agentImagePullSecret *corev1.Secret, targetNamespace string) *corev1.Secret {
+	return &corev1.Secret{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "v1",
+			Kind:       "Secret",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      agentImagePullSecretName,
+			Namespace: targetNamespace,
+		},
+		Data: agentImagePullSecret.Data,
+		Type: corev1.SecretTypeDockerConfigJson,
+	}
+}
+
+func newAddonAgentDeployment(clusterName string, namespace string, imageName string, agentImagePullSecret *corev1.Secret) *appsv1.Deployment {
 	const secretName = "managed-serviceaccount-hub-kubeconfig"
-	return &appsv1.Deployment{
+	deployment := &appsv1.Deployment{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: "apps/v1",
 			Kind:       "Deployment",
@@ -347,4 +371,10 @@ func newAddonAgentDeployment(clusterName string, namespace string, imageName str
 			},
 		},
 	}
+	if agentImagePullSecret != nil {
+		deployment.Spec.Template.Spec.ImagePullSecrets = []corev1.LocalObjectReference{
+			{Name: agentImagePullSecretName},
+		}
+	}
+	return deployment
 }
