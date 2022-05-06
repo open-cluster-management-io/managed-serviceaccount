@@ -36,7 +36,7 @@ architecture of an OCM [addon](https://open-cluster-management.io/concepts/addon
 Installing the addons via the helm charts:
 
 ```shell
-$ helm repo add ocm https://open-cluster-management.oss-us-west-1.aliyuncs.com
+$ helm repo add ocm https://openclustermanagement.blob.core.windows.net/releases/
 $ helm repo update
 $ helm search repo ocm/managed-serviceaccount
 NAME                       	CHART VERSION	APP VERSION	DESCRIPTION                   
