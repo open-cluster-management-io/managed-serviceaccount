@@ -27,3 +27,6 @@ spec:
             {{- if .Values.featureGates }}
             - --feature-gates=EphemeralIdentity={{ .Values.featureGates.ephemeralIdentity | default false}}
             {{- end}}
+            {{- if .Values.agentImagePullSecret }}
+            - --agent-image-pull-secret={{ .Values.agentImagePullSecret }}
+            {{- end}}
