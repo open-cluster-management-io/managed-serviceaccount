@@ -108,7 +108,7 @@ rm -rf $$TMP_DIR ;\
 }
 endef
 
-image:
+images:
 	docker build -t ${IMG_REGISTRY}/managed-serviceaccount:latest -f Dockerfile .
 
 test-integration:
