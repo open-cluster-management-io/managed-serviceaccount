@@ -10,4 +10,3 @@ RUN go build -a -o agent cmd/agent/main.go
 FROM registry.access.redhat.com/ubi8/ubi-minimal:latest
 COPY --from=builder /go/src/github.com/open-cluster-management.io/managed-serviceaccount/manager /
 COPY --from=builder /go/src/github.com/open-cluster-management.io/managed-serviceaccount/agent /
-RUN microdnf update && microdnf clean all
