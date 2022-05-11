@@ -24,8 +24,11 @@ import (
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
+	"github.com/pkg/errors"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -38,6 +41,7 @@ import (
 	authv1alpha1 "open-cluster-management.io/managed-serviceaccount/api/v1alpha1"
 	"open-cluster-management.io/managed-serviceaccount/pkg/addon/manager"
 	"open-cluster-management.io/managed-serviceaccount/pkg/features"
+	"open-cluster-management.io/managed-serviceaccount/pkg/util"
 	ctrl "sigs.k8s.io/controller-runtime"
 	//+kubebuilder:scaffold:imports
 )
@@ -59,6 +63,7 @@ func main() {
 	var probeAddr string
 	var addonAgentImageName string
 	var agentInstallAll bool
+	var imagePullSecretName string
 	var featureGatesFlags map[string]bool
 
 	logger := klogr.New()
@@ -80,6 +85,10 @@ func main() {
 		"feature-gates",
 		"A set of key=value pairs that describe feature gates for alpha/experimental features. "+
 			"Options are:\n"+strings.Join(features.FeatureGates.KnownFeatures(), "\n"))
+	flag.StringVar(&imagePullSecretName, "agent-image-pull-secret", "",
+		"The image pull secret that addon agent will use. "+
+			"When specified, the content of image pull secret in the manager namespace on hub will be copied to the agent namespace on the managed cluster."+
+			"This can also be configured with environment variable AGENT_IMAGE_PULL_SECRET.")
 
 	flag.Parse()
 
@@ -121,11 +130,42 @@ func main() {
 		os.Exit(1)
 	}
 
+	hubNamespace := os.Getenv("NAMESPACE")
+	if len(hubNamespace) == 0 {
+		inClusterNamespace, err := util.GetInClusterNamespace()
+		if err != nil {
+			setupLog.Error(err, "the manager should be either running in a container or specify NAMESPACE environment")
+		}
+		hubNamespace = inClusterNamespace
+	}
+
+	if len(imagePullSecretName) == 0 {
+		imagePullSecretName = os.Getenv("AGENT_IMAGE_PULL_SECRET")
+	}
+
+	imagePullSecret := &corev1.Secret{}
+	if len(imagePullSecretName) != 0 {
+		imagePullSecret, err = nativeClient.CoreV1().Secrets(hubNamespace).Get(
+			context.TODO(),
+			imagePullSecretName,
+			metav1.GetOptions{},
+		)
+		if err != nil {
+			setupLog.Error(err, "fail to get agent image pull secret")
+			os.Exit(1)
+		}
+		if imagePullSecret.Type != corev1.SecretTypeDockerConfigJson {
+			setupLog.Error(errors.Errorf("incorrect type for agent image pull secret"), "")
+			os.Exit(1)
+		}
+	}
+
 	if err := addonManager.AddAgent(
 		manager.NewManagedServiceAccountAddonAgent(
 			nativeClient,
 			addonAgentImageName,
 			agentInstallAll,
+			imagePullSecret,
 		),
 	); err != nil {
 		setupLog.Error(err, "unable to register addon agent")
@@ -156,5 +196,4 @@ func main() {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)
 	}
-
 }
