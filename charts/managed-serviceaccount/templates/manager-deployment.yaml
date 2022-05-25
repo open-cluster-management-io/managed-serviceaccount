@@ -16,13 +16,13 @@ spec:
       serviceAccount: managed-serviceaccount
       containers:
         - name: manager
-          image: "{{ .Values.image }}:{{ .Values.tag }}"
+          image: {{ .Values.image }}:{{ .Values.tag | default (print "v" .Chart.Version) }}
           imagePullPolicy: IfNotPresent
           command:
             - /manager
           args:
             - --leader-elect=true
-            - --agent-image-name={{ .Values.image }}:{{ .Values.tag }}
+            - --agent-image-name={{ .Values.image }}:{{ .Values.tag | default (print "v" .Chart.Version) }}
             - --agent-install-all={{ .Values.agentInstallAll }}
             {{- if .Values.featureGates }}
             - --feature-gates=EphemeralIdentity={{ .Values.featureGates.ephemeralIdentity | default false}}
