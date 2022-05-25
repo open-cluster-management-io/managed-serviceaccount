@@ -1,7 +1,7 @@
 
 # Image URL to use all building/pushing image targets
 IMG_REGISTRY ?= quay.io/open-cluster-management
-IMG_TAG ?= latest
+IMAGE_TAG ?= latest
 # Produce CRDs that work back to Kubernetes 1.11 (no version conversion)
 CRD_OPTIONS ?= "crd:trivialVersions=true,preserveUnknownFields=false"
 E2E_TEST_CLUSTER_NAME ?= loopback
@@ -109,7 +109,7 @@ rm -rf $$TMP_DIR ;\
 endef
 
 images:
-	docker build -t ${IMG_REGISTRY}/managed-serviceaccount:latest -f Dockerfile .
+	docker build -t ${IMG_REGISTRY}/managed-serviceaccount:${IMAGE_TAG} -f Dockerfile .
 
 test-integration:
 	@echo "TODO: Run integration test"
