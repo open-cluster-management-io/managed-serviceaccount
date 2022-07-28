@@ -1,4 +1,4 @@
-FROM golang:1.17 AS builder
+FROM golang:1.18 AS builder
 WORKDIR /go/src/github.com/open-cluster-management.io/managed-serviceaccount
 COPY . .
 ENV GO_PACKAGE github.com/open-cluster-management.io/managed-serviceaccount
