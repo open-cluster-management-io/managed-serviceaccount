@@ -177,10 +177,10 @@ func main() {
 	}
 
 	if features.FeatureGates.Enabled(features.EphemeralIdentity) {
-		if err := (&manager.EphemeralIdentityReconciler{
-			Cache:     mgr.GetCache(),
-			HubClient: mgr.GetClient(),
-		}).SetupWithManager(mgr); err != nil {
+		if err := (manager.NewEphemeralIdentityReconciler(
+			mgr.GetCache(),
+			mgr.GetClient(),
+		)).SetupWithManager(mgr); err != nil {
 			setupLog.Error(err, "unable to register EphemeralIdentityReconciler")
 			os.Exit(1)
 		}
