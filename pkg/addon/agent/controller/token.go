@@ -231,8 +231,10 @@ func (r *TokenReconciler) isSoonExpiring(managed *authv1alpha1.ManagedServiceAcc
 	}
 
 	// check if the token should be refreshed
+	// the token will not be rotated unless its remaining lifetime is less
+	// than 20% of its rotation validity
 	now := metav1.Now()
-	refreshThreshold := managed.Spec.Rotation.Validity.Duration / 5 * 4
+	refreshThreshold := managed.Spec.Rotation.Validity.Duration / 5 * 1
 	lifetime := managed.Status.ExpirationTimestamp.Sub(now.Time)
 	if lifetime < refreshThreshold {
 		return true, nil
