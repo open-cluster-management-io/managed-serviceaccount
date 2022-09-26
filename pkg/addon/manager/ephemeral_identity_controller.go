@@ -7,6 +7,7 @@ import (
 
 	"github.com/pkg/errors"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/util/clock"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -18,9 +19,18 @@ import (
 	authv1alpha1 "open-cluster-management.io/managed-serviceaccount/api/v1alpha1"
 )
 
+func NewEphemeralIdentityReconciler(cache cache.Cache, hubClient client.Client) *EphemeralIdentityReconciler {
+	return &EphemeralIdentityReconciler{
+		Cache:     cache,
+		HubClient: hubClient,
+		clock:     clock.RealClock{},
+	}
+}
+
 var _ reconcile.Reconciler = &EphemeralIdentityReconciler{}
 
 type EphemeralIdentityReconciler struct {
+	clock clock.Clock
 	cache.Cache
 	HubClient client.Client
 }
@@ -43,7 +53,7 @@ func (r *EphemeralIdentityReconciler) Reconcile(ctx context.Context, request rec
 	managed := &authv1alpha1.ManagedServiceAccount{}
 	if err := r.Cache.Get(ctx, request.NamespacedName, managed); err != nil {
 		if !apierrors.IsNotFound(err) {
-			return reconcile.Result{}, errors.Wrapf(err, "no such ManagedServiceAccount")
+			return reconcile.Result{}, errors.Wrapf(err, "fail to get managed serviceaccount")
 		}
 		logger.Info("No such resource")
 		return reconcile.Result{}, nil
@@ -54,7 +64,7 @@ func (r *EphemeralIdentityReconciler) Reconcile(ctx context.Context, request rec
 		return reconcile.Result{}, nil
 	}
 
-	currentTime := time.Now()
+	currentTime := r.clock.Now()
 	deletionTime := managed.CreationTimestamp.Add(
 		time.Duration(*managed.Spec.TTLSecondsAfterCreation) * time.Second,
 	)
