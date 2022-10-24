@@ -143,6 +143,30 @@ func TestReconcile(t *testing.T) {
 				})
 			},
 		},
+		{
+			name: "refreshing token will preserve object metadata (annotations/labels)",
+			sa:   newServiceAccount(clusterName, msaName),
+			secret: newSecret(clusterName, msaName, token2, ca2, func(secret *corev1.Secret) {
+				secret.ObjectMeta.Annotations["foo"] = "bar"
+				secret.ObjectMeta.Labels["foo"] = "bar"
+			}),
+			msa: newManagedServiceAccount(clusterName, msaName).
+				withRotationValidity(500*time.Second).
+				withTokenSecretRef(msaName, time.Now().Add(300*time.Second)).
+				build(),
+			newToken:               token1,
+			isExistingTokenInvalid: true,
+			validateFunc: func(t *testing.T, hubClient client.Client, actions []clienttesting.Action) {
+				secret := &corev1.Secret{}
+				err := hubClient.Get(context.TODO(), types.NamespacedName{
+					Namespace: clusterName,
+					Name:      msaName,
+				}, secret)
+				assert.NoError(t, err)
+				assert.Equal(t, secret.ObjectMeta.Annotations["foo"], "bar")
+				assert.Equal(t, secret.ObjectMeta.Labels["foo"], "bar")
+			},
+		},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -395,11 +419,13 @@ func (b *managedServiceAccountBuilder) withTokenSecretRef(secretName string, exp
 	return b
 }
 
-func newSecret(namespace, name, token, ca string) *corev1.Secret {
+func newSecret(namespace, name, token, ca string, modifiers ...func(*corev1.Secret)) *corev1.Secret {
 	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: namespace,
+			Name:        name,
+			Namespace:   namespace,
+			Annotations: make(map[string]string),
+			Labels:      make(map[string]string),
 		},
 		Data: map[string][]byte{},
 	}
@@ -408,6 +434,9 @@ func newSecret(namespace, name, token, ca string) *corev1.Secret {
 	}
 	if len(ca) != 0 {
 		secret.Data[corev1.ServiceAccountRootCAKey] = []byte(ca)
+	}
+	for _, modifier := range modifiers {
+		modifier(secret)
 	}
 	return secret
 }
