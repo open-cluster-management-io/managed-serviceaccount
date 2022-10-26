@@ -1,6 +1,6 @@
 module open-cluster-management.io/managed-serviceaccount
 
-go 1.18
+go 1.19
 
 require (
 	github.com/onsi/ginkgo v1.16.5
