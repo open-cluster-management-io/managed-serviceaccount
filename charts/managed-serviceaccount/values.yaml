@@ -6,6 +6,8 @@ agentInstallAll: true
 # Number of replicas
 replicas: 1
 
+enableAddOnDeploymentConfig: false
+
 featureGates:
   ephemeralIdentity: false
 

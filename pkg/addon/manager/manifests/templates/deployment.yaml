@@ -14,6 +14,24 @@ spec:
         addon-agent: managed-serviceaccount
     spec:
       serviceAccount: managed-serviceaccount
+{{- if .NodeSelector }}
+      nodeSelector:
+      {{- range $key, $value := .NodeSelector }}
+        "{{ $key }}": "{{ $value }}"
+      {{- end }}
+{{- end }}
+{{- if .Tolerations }}
+      tolerations:
+      {{- range $toleration := .Tolerations }}
+      - key: "{{ $toleration.Key }}"
+        value: "{{ $toleration.Value }}"
+        effect: "{{ $toleration.Effect }}"
+        operator: "{{ $toleration.Operator }}"
+        {{- if $toleration.TolerationSeconds }}
+        tolerationSeconds: {{ $toleration.TolerationSeconds }}
+        {{- end }}
+      {{- end }}
+{{- end }}
       containers:
         - name: addon-agent
           image: {{ .Image }}

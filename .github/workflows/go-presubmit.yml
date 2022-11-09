@@ -102,6 +102,7 @@ jobs:
              -n open-cluster-management-addon --create-namespace \
              managed-serviceaccount charts/managed-serviceaccount/ \
              --set tag=latest \
-             --set featureGates.ephemeralIdentity=true
+             --set featureGates.ephemeralIdentity=true \
+             --set enableAddOnDeploymentConfig=true
       - name: Run e2e test
         run: make test-e2e

@@ -40,6 +40,7 @@ import (
 	"open-cluster-management.io/addon-framework/pkg/addonfactory"
 	"open-cluster-management.io/addon-framework/pkg/addonmanager"
 	"open-cluster-management.io/addon-framework/pkg/agent"
+	addonclient "open-cluster-management.io/api/client/addon/clientset/versioned"
 	authv1alpha1 "open-cluster-management.io/managed-serviceaccount/api/v1alpha1"
 	"open-cluster-management.io/managed-serviceaccount/pkg/addon/manager"
 	"open-cluster-management.io/managed-serviceaccount/pkg/common"
@@ -127,6 +128,12 @@ func main() {
 		os.Exit(1)
 	}
 
+	addonClient, err := addonclient.NewForConfig(mgr.GetConfig())
+	if err != nil {
+		setupLog.Error(err, "unable to instantiating ocm addon client")
+		os.Exit(1)
+	}
+
 	_, err = mgr.GetRESTMapper().ResourceFor(schema.GroupVersionResource{
 		Group:    authv1alpha1.GroupVersion.Group,
 		Version:  authv1alpha1.GroupVersion.Version,
@@ -168,7 +175,14 @@ func main() {
 	}
 
 	agentFactory := addonfactory.NewAgentAddonFactory(common.AddonName, manager.FS, "manifests/templates").
-		WithGetValuesFuncs(manager.GetDefaultValues(addonAgentImageName, imagePullSecret)).
+		WithConfigGVRs(addonfactory.AddOnDeploymentConfigGVR).
+		WithGetValuesFuncs(
+			manager.GetDefaultValues(addonAgentImageName, imagePullSecret),
+			addonfactory.GetAddOnDeloymentConfigValues(
+				addonfactory.NewAddOnDeloymentConfigGetter(addonClient),
+				addonfactory.ToAddOnDeloymentConfigValues,
+			),
+		).
 		WithAgentRegistrationOption(manager.NewRegistrationOption(nativeClient))
 
 	if agentInstallAll {
