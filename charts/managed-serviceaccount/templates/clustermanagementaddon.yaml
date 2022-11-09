@@ -6,3 +6,8 @@ spec:
   addOnMeta:
     displayName: managed-serviceaccount
     description: managed-serviceaccount
+{{- if .Values.enableAddOnDeploymentConfig }}
+  supportedConfigs:
+  - group: addon.open-cluster-management.io
+    resource: addondeploymentconfigs
+{{- end }}
