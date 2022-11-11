@@ -37,9 +37,13 @@ import (
 	cliflag "k8s.io/component-base/cli/flag"
 	"k8s.io/klog/v2"
 	"k8s.io/klog/v2/klogr"
+	"open-cluster-management.io/addon-framework/pkg/addonfactory"
 	"open-cluster-management.io/addon-framework/pkg/addonmanager"
+	"open-cluster-management.io/addon-framework/pkg/agent"
+	addonclient "open-cluster-management.io/api/client/addon/clientset/versioned"
 	authv1alpha1 "open-cluster-management.io/managed-serviceaccount/api/v1alpha1"
 	"open-cluster-management.io/managed-serviceaccount/pkg/addon/manager"
+	"open-cluster-management.io/managed-serviceaccount/pkg/common"
 	"open-cluster-management.io/managed-serviceaccount/pkg/features"
 	"open-cluster-management.io/managed-serviceaccount/pkg/util"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -124,6 +128,12 @@ func main() {
 		os.Exit(1)
 	}
 
+	addonClient, err := addonclient.NewForConfig(mgr.GetConfig())
+	if err != nil {
+		setupLog.Error(err, "unable to instantiating ocm addon client")
+		os.Exit(1)
+	}
+
 	_, err = mgr.GetRESTMapper().ResourceFor(schema.GroupVersionResource{
 		Group:    authv1alpha1.GroupVersion.Group,
 		Version:  authv1alpha1.GroupVersion.Version,
@@ -164,14 +174,28 @@ func main() {
 		}
 	}
 
-	if err := addonManager.AddAgent(
-		manager.NewManagedServiceAccountAddonAgent(
-			nativeClient,
-			addonAgentImageName,
-			agentInstallAll,
-			imagePullSecret,
-		),
-	); err != nil {
+	agentFactory := addonfactory.NewAgentAddonFactory(common.AddonName, manager.FS, "manifests/templates").
+		WithConfigGVRs(addonfactory.AddOnDeploymentConfigGVR).
+		WithGetValuesFuncs(
+			manager.GetDefaultValues(addonAgentImageName, imagePullSecret),
+			addonfactory.GetAddOnDeloymentConfigValues(
+				addonfactory.NewAddOnDeloymentConfigGetter(addonClient),
+				addonfactory.ToAddOnDeloymentConfigValues,
+			),
+		).
+		WithAgentRegistrationOption(manager.NewRegistrationOption(nativeClient))
+
+	if agentInstallAll {
+		agentFactory.WithInstallStrategy(agent.InstallAllStrategy(common.AddonAgentInstallNamespace))
+	}
+
+	agentAddOn, err := agentFactory.BuildTemplateAgentAddon()
+	if err != nil {
+		setupLog.Error(err, "failed to build agent")
+		os.Exit(1)
+	}
+
+	if err := addonManager.AddAgent(agentAddOn); err != nil {
 		setupLog.Error(err, "unable to register addon agent")
 		os.Exit(1)
 	}
