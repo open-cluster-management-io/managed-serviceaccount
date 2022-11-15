@@ -2,8 +2,11 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"flag"
+	"net/http"
 	"os"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -16,6 +19,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/klog/v2"
 	"k8s.io/klog/v2/klogr"
+	addonutils "open-cluster-management.io/addon-framework/pkg/utils"
 	authv1alpha1 "open-cluster-management.io/managed-serviceaccount/api/v1alpha1"
 	"open-cluster-management.io/managed-serviceaccount/pkg/addon/agent/controller"
 	"open-cluster-management.io/managed-serviceaccount/pkg/addon/agent/health"
@@ -23,6 +27,7 @@ import (
 	"open-cluster-management.io/managed-serviceaccount/pkg/util"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
+	"sigs.k8s.io/controller-runtime/pkg/healthz"
 )
 
 var (
@@ -166,8 +171,37 @@ func main() {
 	}
 	go leaseUpdater.Start(ctx)
 
+	cc, err := addonutils.NewConfigChecker("managed-serviceaccount-agent", "/etc/hub/kubeconfig")
+	if err != nil {
+		klog.Fatalf("unable to create config checker for controller %v", "ManagedServiceAccount")
+	}
+	go func() {
+		if err = serveHealthProbes(":8000", cc.Check); err != nil {
+			klog.Fatal(err)
+		}
+	}()
+
 	if err := mgr.Start(ctx); err != nil {
 		klog.Fatalf("unable to start controller manager: %v", err)
 	}
 
+}
+
+// serveHealthProbes serves health probes and configchecker.
+func serveHealthProbes(healthProbeBindAddress string, configCheck healthz.Checker) error {
+	mux := http.NewServeMux()
+	mux.Handle("/healthz", http.StripPrefix("/healthz", &healthz.Handler{Checks: map[string]healthz.Checker{
+		"healthz-ping": healthz.Ping,
+		"configz-ping": configCheck,
+	}}))
+	server := http.Server{
+		Handler:           mux,
+		ReadHeaderTimeout: 5 * time.Second,
+		Addr:              healthProbeBindAddress,
+		TLSConfig: &tls.Config{
+			MinVersion: tls.VersionTLS12,
+		},
+	}
+	klog.Infof("heath probes server is running...")
+	return server.ListenAndServe()
 }

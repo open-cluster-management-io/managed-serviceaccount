@@ -46,6 +46,12 @@ spec:
             - name: hub-kubeconfig
               mountPath: /etc/hub/
               readOnly: true
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8000
+            initialDelaySeconds: 2
+            periodSeconds: 10
       volumes:
         - name: hub-kubeconfig
           secret:
