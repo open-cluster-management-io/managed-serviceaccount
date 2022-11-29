@@ -115,7 +115,7 @@ type fakeCache struct {
 	getError error
 }
 
-func (f fakeCache) Get(ctx context.Context, key client.ObjectKey, obj client.Object) error {
+func (f fakeCache) Get(ctx context.Context, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
 	if f.getError != nil {
 		return f.getError
 	}
