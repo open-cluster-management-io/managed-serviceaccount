@@ -15,8 +15,8 @@ limitations under the License.
 */
 
 // Package v1alpha1 contains API Schema definitions for the authentication.open-cluster-management.io v1alpha1 API group
-//+kubebuilder:object:generate=true
-//+groupName=authentication.open-cluster-management.io
+// +kubebuilder:object:generate=true
+// +groupName=authentication.open-cluster-management.io
 package v1alpha1
 
 import (
