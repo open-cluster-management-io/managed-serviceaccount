@@ -16,7 +16,6 @@ import (
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
-	"k8s.io/client-go/tools/record"
 	"k8s.io/klog/v2"
 	"k8s.io/klog/v2/klogr"
 	addonutils "open-cluster-management.io/addon-framework/pkg/utils"
@@ -89,7 +88,6 @@ func main() {
 		LeaderElection:         enableLeaderElection,
 		LeaderElectionID:       "managed-serviceaccount-addon-agent",
 		LeaderElectionConfig:   spokeCfg,
-		EventBroadcaster:       record.NewBroadcaster(),
 	})
 	if err != nil {
 		klog.Fatal("unable to start manager")
