@@ -1,6 +1,7 @@
 package event
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -94,16 +95,16 @@ func TestSecretEventHandler(t *testing.T) {
 }
 
 func processEvent(handler handler.EventHandler, evt interface{}) workqueue.RateLimitingInterface {
-	q := controllertest.Queue{Interface: workqueue.New()}
+	q := &controllertest.Queue{Interface: workqueue.New()}
 	switch e := evt.(type) {
 	case *event.CreateEvent:
-		handler.Create(*e, q)
+		handler.Create(context.TODO(), *e, q)
 	case *event.UpdateEvent:
-		handler.Update(*e, q)
+		handler.Update(context.TODO(), *e, q)
 	case *event.DeleteEvent:
-		handler.Delete(*e, q)
+		handler.Delete(context.TODO(), *e, q)
 	case *event.GenericEvent:
-		handler.Generic(*e, q)
+		handler.Generic(context.TODO(), *e, q)
 	}
 	return q
 }
