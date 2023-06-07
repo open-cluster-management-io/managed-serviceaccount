@@ -26,6 +26,7 @@ import (
 	"open-cluster-management.io/managed-serviceaccount/pkg/util"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 )
 
@@ -128,7 +129,7 @@ func main() {
 	}
 
 	spokeCache, err := cache.New(spokeCfg, cache.Options{
-		SelectorsByObject: cache.SelectorsByObject{
+		ByObject: map[client.Object]cache.ByObject{
 			&corev1.ServiceAccount{}: {
 				Label: labels.SelectorFromSet(
 					labels.Set{
@@ -137,7 +138,7 @@ func main() {
 				),
 			},
 		},
-		Namespace: spokeNamespace,
+		Namespaces: []string{spokeNamespace},
 	})
 	if err != nil {
 		klog.Fatal("unable to instantiate a spoke serviceaccount cache")
