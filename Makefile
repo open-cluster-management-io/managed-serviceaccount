@@ -13,6 +13,9 @@ else
 GOBIN=$(shell go env GOBIN)
 endif
 
+export CGO_ENABLED  = 1
+export GOFLAGS ?=
+
 # Setting SHELL to bash allows bash commands to be executed by recipes.
 # This is a requirement for 'setup-envtest.sh' in the test target.
 # Options are set to exit when a recipe line exits non-zero or a piped command fails.
@@ -60,9 +63,13 @@ test: manifests generate fmt vet ## Run tests.
 
 ##@ Build
 
-build: generate fmt vet ## Build manager binary.
-	go build -o bin/manager cmd/manager/main.go
-	go build -o bin/agent cmd/agent/main.go
+build: generate fmt vet build-manager build-agent
+
+build-manager:
+	go build -a -o bin/manager cmd/manager/main.go
+
+build-agent:
+	go build -a -o bin/agent cmd/agent/main.go
 
 build-e2e:
 	go test -c -o bin/e2e ./e2e/
