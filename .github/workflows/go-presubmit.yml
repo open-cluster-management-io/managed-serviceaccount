@@ -98,3 +98,37 @@ jobs:
              --set enableAddOnDeploymentConfig=true
       - name: Run e2e test
         run: make test-e2e
+
+  e2e-addon-template:
+    name: e2e-addon-template
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout code
+        uses: actions/checkout@v2
+      - name: install Go
+        uses: actions/setup-go@v2
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - name: Install clusteradm
+        run: |
+          git clone --depth 1 https://github.com/open-cluster-management-io/clusteradm.git
+          cd clusteradm
+          make build
+      - name: Create k8s Kind Cluster
+        uses: helm/kind-action@v1.2.0
+      - name: Prepare OCM testing environment
+        run: |
+          clusteradm init --bundle-version='latest' --output-join-command-file join.sh --wait
+          sh -c "$(cat join.sh) loopback --force-internal-endpoint-lookup --bundle-version='latest'"
+          clusteradm accept --clusters loopback --wait 30
+          kubectl wait --for=condition=ManagedClusterConditionAvailable managedcluster/loopback
+      - name: Build image
+        run: |
+          make images
+          kind load docker-image quay.io/open-cluster-management/managed-serviceaccount:latest  --name chart-testing
+      - name: Install latest managed-serviceaccount
+        run: |
+          kubectl create namespace loopback --dry-run=client -o yaml | kubectl apply -f -
+          kubectl apply -R -f deploy
+      - name: Run e2e test
+        run: make test-e2e

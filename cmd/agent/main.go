@@ -169,7 +169,7 @@ func main() {
 	}
 	go leaseUpdater.Start(ctx)
 
-	cc, err := addonutils.NewConfigChecker("managed-serviceaccount-agent", "/etc/hub/kubeconfig")
+	cc, err := addonutils.NewConfigChecker("managed-serviceaccount-agent", getHubKubeconfigPath())
 	if err != nil {
 		klog.Fatalf("unable to create config checker for controller %v", "ManagedServiceAccount")
 	}
@@ -202,4 +202,12 @@ func serveHealthProbes(healthProbeBindAddress string, configCheck healthz.Checke
 	}
 	klog.Infof("heath probes server is running...")
 	return server.ListenAndServe()
+}
+
+func getHubKubeconfigPath() string {
+	hubKubeconfigPath := os.Getenv("HUB_KUBECONFIG")
+	if len(hubKubeconfigPath) == 0 {
+		hubKubeconfigPath = "/etc/hub/kubeconfig"
+	}
+	return hubKubeconfigPath
 }

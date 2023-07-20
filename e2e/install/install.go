@@ -7,14 +7,17 @@ import (
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
-
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
+	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/types"
 	addonv1alpha1 "open-cluster-management.io/api/addon/v1alpha1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+
 	"open-cluster-management.io/managed-serviceaccount/e2e/framework"
 	"open-cluster-management.io/managed-serviceaccount/pkg/common"
 )
@@ -44,7 +47,7 @@ var _ = Describe("Addon Installation Test",
 			c := f.HubRuntimeClient()
 			By("Prepare a AddOnDeployMentConfig for managed-serviceaccount addon")
 			Eventually(func() error {
-				return c.Create(context.TODO(), &addonv1alpha1.AddOnDeploymentConfig{
+				err := c.Create(context.TODO(), &addonv1alpha1.AddOnDeploymentConfig{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      deployConfigName,
 						Namespace: f.TestClusterName(),
@@ -56,6 +59,14 @@ var _ = Describe("Addon Installation Test",
 						},
 					},
 				})
+				// Ignore already exists error so it is easier to debug locally
+				if errors.IsAlreadyExists(err) {
+					return nil
+				}
+				if err != nil {
+					return err
+				}
+				return nil
 			}).WithTimeout(time.Minute).ShouldNot(HaveOccurred())
 
 			By("Add the config to managed-serviceaccount addon")
@@ -97,22 +108,39 @@ var _ = Describe("Addon Installation Test",
 				if len(addon.Status.ConfigReferences) == 0 {
 					return fmt.Errorf("no config references in addon status")
 				}
-				if addon.Status.ConfigReferences[0].Name != deployConfigName {
-					return fmt.Errorf("unexpected config references %v", addon.Status.ConfigReferences)
+				found := false
+				for _, ref := range addon.Status.ConfigReferences {
+					if ref.Resource != "addondeploymentconfigs" {
+						continue
+					}
+					if ref.Group != "addon.open-cluster-management.io" {
+						continue
+					}
+					if ref.Name != deployConfigName {
+						return fmt.Errorf("unexpected config references %v", addon.Status.ConfigReferences)
+					}
+					found = true
 				}
+				if !found {
+					return fmt.Errorf("no config references in addon status")
+				}
+
 				return nil
 			}).WithTimeout(time.Minute).ShouldNot(HaveOccurred())
 
-			By("Ensure the cluster-proxy is configured")
+			By("Ensure the managed serviceaccount addon agent is configured")
 			Eventually(func() error {
-				deploy := &appsv1.Deployment{}
-				if err := c.Get(context.TODO(), types.NamespacedName{
-					Namespace: common.AddonAgentInstallNamespace,
-					Name:      "managed-serviceaccount-addon-agent",
-				}, deploy); err != nil {
-					return err
-				}
+				deployments := &appsv1.DeploymentList{}
+				c.List(context.TODO(), deployments, &client.ListOptions{
+					FieldSelector: fields.SelectorFromSet(map[string]string{
+						"metadata.name": "managed-serviceaccount-addon-agent",
+					}),
+				})
 
+				if len(deployments.Items) != 1 {
+					return fmt.Errorf("unexpected number of deployments %v", deployments.Items)
+				}
+				deploy := &deployments.Items[0]
 				if deploy.Status.AvailableReplicas != *deploy.Spec.Replicas {
 					return fmt.Errorf("unexpected available replicas %v", deploy.Status)
 				}
