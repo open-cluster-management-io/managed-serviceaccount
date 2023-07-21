@@ -43,3 +43,15 @@ rules:
   - leases
   verbs:
   - '*'
+- apiGroups:
+    - authentication.open-cluster-management.io
+  resources:
+    - managedserviceaccounts
+    - managedserviceaccounts/status
+  verbs:
+    - get
+    - list
+    - watch
+    - update
+    - patch
+    - delete

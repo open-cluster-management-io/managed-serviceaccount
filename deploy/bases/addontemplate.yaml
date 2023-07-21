@@ -53,20 +53,13 @@ spec:
                         - --leader-elect=true
                         - --cluster-name={{CLUSTER_NAME}}
                         - --kubeconfig={{HUB_KUBECONFIG}}
-                      # volumeMounts:
-                      #   - name: hub-kubeconfig
-                      #     mountPath: /etc/hub/
-                      #     readOnly: true
+                        - --feature-gates=EphemeralIdentity=true
                       livenessProbe:
                         httpGet:
                           path: /healthz
                           port: 8000
                         initialDelaySeconds: 2
                         periodSeconds: 10
-                  # volumes:
-                  #   - name: hub-kubeconfig
-                  #     secret:
-                  #       secretName: managed-serviceaccount-hub-kubeconfig
             # {{ if .ImagePullSecretData }}
             #       imagePullSecrets:
             #       - name: open-cluster-management-image-pull-credentials
