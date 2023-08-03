@@ -45,7 +45,7 @@ spec:
                   serviceAccount: managed-serviceaccount
                   containers:
                     - name: addon-agent
-                      image: quay.io/open-cluster-management/managed-serviceaccount
+                      image: quay.io/open-cluster-management/managed-serviceaccount:latest
                       imagePullPolicy: IfNotPresent
                       command:
                         - /agent
@@ -60,10 +60,6 @@ spec:
                           port: 8000
                         initialDelaySeconds: 2
                         periodSeconds: 10
-            # {{ if .ImagePullSecretData }}
-            #       imagePullSecrets:
-            #       - name: open-cluster-management-image-pull-credentials
-            # {{- end }}
           - apiVersion: rbac.authorization.k8s.io/v1
             kind: Role
             metadata:
@@ -100,6 +96,8 @@ spec:
             metadata:
               name: managed-serviceaccount
               namespace: open-cluster-management-agent-addon
+            imagePullSecrets:
+              - name: open-cluster-management-image-pull-credentials
   registration:
     - type: KubeClient
       kubeClient:

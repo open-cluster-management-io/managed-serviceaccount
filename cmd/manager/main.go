@@ -40,6 +40,7 @@ import (
 	"open-cluster-management.io/addon-framework/pkg/addonfactory"
 	"open-cluster-management.io/addon-framework/pkg/addonmanager"
 	"open-cluster-management.io/addon-framework/pkg/agent"
+	"open-cluster-management.io/addon-framework/pkg/utils"
 	addonclient "open-cluster-management.io/api/client/addon/clientset/versioned"
 	authv1alpha1 "open-cluster-management.io/managed-serviceaccount/api/v1alpha1"
 	"open-cluster-management.io/managed-serviceaccount/pkg/addon/commoncontroller"
@@ -176,15 +177,21 @@ func main() {
 	}
 
 	agentFactory := addonfactory.NewAgentAddonFactory(common.AddonName, manager.FS, "manifests/templates").
-		WithConfigGVRs(addonfactory.AddOnDeploymentConfigGVR).
+		WithConfigGVRs(utils.AddOnDeploymentConfigGVR).
 		WithGetValuesFuncs(
 			manager.GetDefaultValues(addonAgentImageName, imagePullSecret),
+			addonfactory.GetAgentImageValues(
+				addonfactory.NewAddOnDeploymentConfigGetter(addonClient),
+				"Image",
+				addonAgentImageName,
+			),
 			addonfactory.GetAddOnDeloymentConfigValues(
-				addonfactory.NewAddOnDeloymentConfigGetter(addonClient),
+				addonfactory.NewAddOnDeploymentConfigGetter(addonClient),
 				addonfactory.ToAddOnDeloymentConfigValues,
 			),
 		).
-		WithAgentRegistrationOption(manager.NewRegistrationOption(nativeClient))
+		WithAgentRegistrationOption(manager.NewRegistrationOption(nativeClient)).
+		WithAgentDeployTriggerClusterFilter(utils.ClusterImageRegistriesAnnotationChanged)
 
 	if agentInstallAll {
 		agentFactory.WithInstallStrategy(agent.InstallAllStrategy(common.AddonAgentInstallNamespace))
