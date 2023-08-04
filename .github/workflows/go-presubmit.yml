@@ -87,7 +87,7 @@ jobs:
       - name: Build image
         run: |
           make images
-          kind load docker-image quay.io/open-cluster-management/managed-serviceaccount:latest  --name chart-testing
+          kind load docker-image quay.io/open-cluster-management/managed-serviceaccount:latest --name chart-testing
       - name: Install latest managed-serviceaccount
         run: |
           helm install \
@@ -125,7 +125,7 @@ jobs:
       - name: Build image
         run: |
           make images
-          kind load docker-image quay.io/open-cluster-management/managed-serviceaccount:latest  --name chart-testing
+          kind load docker-image quay.io/open-cluster-management/managed-serviceaccount:latest --name chart-testing
       - name: Install latest managed-serviceaccount
         run: |
           kubectl create namespace loopback --dry-run=client -o yaml | kubectl apply -f -

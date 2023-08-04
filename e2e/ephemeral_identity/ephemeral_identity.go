@@ -54,6 +54,7 @@ var _ = Describe("Ephemeral ManagedServiceAccount Test", Label("ephemeral"), fun
 			Namespace: f.TestClusterName(),
 			Name:      targetName,
 		}, latest)
+		Expect(err).NotTo(HaveOccurred())
 
 		createdAt := latest.CreationTimestamp
 		deletedAt := latest.DeletionTimestamp
