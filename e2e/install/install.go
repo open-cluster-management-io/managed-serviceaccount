@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -24,7 +24,7 @@ import (
 
 const installTestBasename = "install"
 
-var _ = Describe("Addon Installation Test",
+var _ = Describe("Addon Installation Test", Label("install"),
 	func() {
 		f := framework.NewE2EFramework(installTestBasename)
 		It("Addon healthiness should work", func() {
