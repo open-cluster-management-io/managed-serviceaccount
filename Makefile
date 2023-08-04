@@ -122,7 +122,7 @@ test-integration:
 	@echo "TODO: Run integration test"
 
 test-e2e: build-e2e
-	./bin/e2e --test-cluster $(E2E_TEST_CLUSTER_NAME)
+	./bin/e2e --test-cluster $(E2E_TEST_CLUSTER_NAME) $(GENKGO_ARGS)
 
 client-gen:
 	go install sigs.k8s.io/apiserver-runtime/tools/apiserver-runtime-gen@v1.1.1

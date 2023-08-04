@@ -6,6 +6,7 @@ import (
 	"flag"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -16,17 +17,21 @@ import (
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
+	cliflag "k8s.io/component-base/cli/flag"
 	"k8s.io/klog/v2"
 	"k8s.io/klog/v2/klogr"
 	addonutils "open-cluster-management.io/addon-framework/pkg/utils"
-	authv1alpha1 "open-cluster-management.io/managed-serviceaccount/api/v1alpha1"
-	"open-cluster-management.io/managed-serviceaccount/pkg/addon/agent/controller"
-	"open-cluster-management.io/managed-serviceaccount/pkg/addon/agent/health"
-	"open-cluster-management.io/managed-serviceaccount/pkg/common"
-	"open-cluster-management.io/managed-serviceaccount/pkg/util"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
+
+	authv1alpha1 "open-cluster-management.io/managed-serviceaccount/api/v1alpha1"
+	"open-cluster-management.io/managed-serviceaccount/pkg/addon/agent/controller"
+	"open-cluster-management.io/managed-serviceaccount/pkg/addon/agent/health"
+	"open-cluster-management.io/managed-serviceaccount/pkg/addon/commoncontroller"
+	"open-cluster-management.io/managed-serviceaccount/pkg/common"
+	"open-cluster-management.io/managed-serviceaccount/pkg/features"
+	"open-cluster-management.io/managed-serviceaccount/pkg/util"
 )
 
 var (
@@ -45,6 +50,7 @@ func main() {
 	var probeAddr string
 	var clusterName string
 	var spokeKubeconfig string
+	var featureGatesFlags map[string]bool
 
 	logger := klogr.New()
 	klog.SetOutput(os.Stdout)
@@ -57,16 +63,25 @@ func main() {
 	flag.StringVar(&clusterName, "cluster-name", "", "The name of the managed cluster.")
 	flag.StringVar(&spokeKubeconfig, "spoke-kubeconfig", "", "The kubeconfig to talk to the managed cluster, "+
 		"will use the in-cluster client if not specified.")
+	flag.Var(
+		cliflag.NewMapStringBool(&featureGatesFlags),
+		"feature-gates",
+		"A set of key=value pairs that describe feature gates for alpha/experimental features. "+
+			"Options are:\n"+strings.Join(features.FeatureGates.KnownFeatures(), "\n"))
 
 	flag.Parse()
 	ctrl.SetLogger(logger)
+
+	err := features.FeatureGates.SetFromMap(featureGatesFlags)
+	if err != nil {
+		klog.Fatalf("unable to set featuregates map: %v", err)
+	}
 
 	if len(clusterName) == 0 {
 		klog.Fatal("missing --cluster-name")
 	}
 
 	var spokeCfg *rest.Config
-	var err error
 	if len(spokeKubeconfig) > 0 {
 		spokeCfg, err = clientcmd.BuildConfigFromFlags("", spokeKubeconfig)
 		if err != nil {
@@ -80,6 +95,7 @@ func main() {
 	}
 
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
+		// Only watch resources in the managed cluster namespace on the hub cluster.
 		Namespace:              clusterName,
 		Scheme:                 scheme,
 		MetricsBindAddress:     metricsAddr,
@@ -147,6 +163,16 @@ func main() {
 		klog.Fatal("unable to add spoke cache to manager")
 	}
 
+	if features.FeatureGates.Enabled(features.EphemeralIdentity) {
+		if err := (commoncontroller.NewEphemeralIdentityReconciler(
+			mgr.GetCache(),
+			mgr.GetClient(),
+		)).SetupWithManager(mgr); err != nil {
+			klog.Error(err, "unable to register EphemeralIdentityReconciler")
+			os.Exit(1)
+		}
+	}
+
 	if err = (&controller.TokenReconciler{
 		Cache:             mgr.GetCache(),
 		HubClient:         mgr.GetClient(),
@@ -169,7 +195,7 @@ func main() {
 	}
 	go leaseUpdater.Start(ctx)
 
-	cc, err := addonutils.NewConfigChecker("managed-serviceaccount-agent", "/etc/hub/kubeconfig")
+	cc, err := addonutils.NewConfigChecker("managed-serviceaccount-agent", getHubKubeconfigPath())
 	if err != nil {
 		klog.Fatalf("unable to create config checker for controller %v", "ManagedServiceAccount")
 	}
@@ -202,4 +228,12 @@ func serveHealthProbes(healthProbeBindAddress string, configCheck healthz.Checke
 	}
 	klog.Infof("heath probes server is running...")
 	return server.ListenAndServe()
+}
+
+func getHubKubeconfigPath() string {
+	hubKubeconfigPath := os.Getenv("HUB_KUBECONFIG")
+	if len(hubKubeconfigPath) == 0 {
+		hubKubeconfigPath = "/etc/hub/kubeconfig"
+	}
+	return hubKubeconfigPath
 }

@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -16,7 +16,7 @@ import (
 
 const testBasename = "ephemeral"
 
-var _ = Describe("Ephemeral ManagedServiceAccount Test", func() {
+var _ = Describe("Ephemeral ManagedServiceAccount Test", Label("ephemeral"), func() {
 	f := framework.NewE2EFramework(testBasename)
 	targetName := "e2e-" + testBasename + "-" + framework.RunID
 	var ttlSecond int32 = 2
@@ -54,6 +54,7 @@ var _ = Describe("Ephemeral ManagedServiceAccount Test", func() {
 			Namespace: f.TestClusterName(),
 			Name:      targetName,
 		}, latest)
+		Expect(err).NotTo(HaveOccurred())
 
 		createdAt := latest.CreationTimestamp
 		deletedAt := latest.DeletionTimestamp
