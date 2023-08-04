@@ -24,7 +24,7 @@ import (
 
 const installTestBasename = "install"
 
-var _ = Describe("Addon Installation Test",
+var _ = Describe("Addon Installation Test", Label("install"),
 	func() {
 		f := framework.NewE2EFramework(installTestBasename)
 		It("Addon healthiness should work", func() {
