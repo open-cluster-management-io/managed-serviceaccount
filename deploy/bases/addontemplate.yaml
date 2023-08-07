@@ -67,8 +67,8 @@ spec:
               namespace: open-cluster-management-agent-addon
             rules:
             - apiGroups: [""]
-              resources: ["configmaps"]
-              verbs: ["get", "create", "update", "patch"]
+              resources: ["events"]
+              verbs: ["create"]
             - apiGroups: [""]
               resources: ["serviceaccounts", "serviceaccounts/token"]
               verbs: ["get", "watch", "list", "create", "delete"]
