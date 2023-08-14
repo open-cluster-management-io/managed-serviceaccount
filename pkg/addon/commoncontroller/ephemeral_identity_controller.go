@@ -14,7 +14,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	authv1alpha1 "open-cluster-management.io/managed-serviceaccount/api/v1alpha1"
 )
@@ -40,9 +39,7 @@ func (r *EphemeralIdentityReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&authv1alpha1.ManagedServiceAccount{}).
 		Watches(
-			&source.Kind{
-				Type: &authv1alpha1.ManagedServiceAccount{},
-			},
+			&authv1alpha1.ManagedServiceAccount{},
 			&handler.EnqueueRequestForObject{},
 		).Complete(r)
 }

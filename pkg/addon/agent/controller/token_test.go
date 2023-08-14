@@ -208,15 +208,16 @@ func TestReconcile(t *testing.T) {
 			testscheme := scheme.Scheme
 			authv1alpha1.AddToScheme(testscheme)
 			corev1.AddToScheme(testscheme)
-			objs = []runtime.Object{}
+			var objects []client.Object
 			if c.msa != nil {
-				objs = append(objs, c.msa)
+				objects = append(objects, c.msa)
 			}
 			if c.secret != nil {
-				objs = append(objs, c.secret)
+				objects = append(objects, c.secret)
 			}
-			hubClient := fake.NewFakeClientWithScheme(testscheme, objs...)
 
+			hubClient := fake.NewClientBuilder().WithScheme(testscheme).WithObjects(objects...).
+				WithStatusSubresource(objects...).Build()
 			reconciler := TokenReconciler{
 				Cache: &fakeCache{
 					msa:      c.msa,

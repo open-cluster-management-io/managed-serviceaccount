@@ -1,6 +1,8 @@
 package event
 
 import (
+	"context"
+
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/util/workqueue"
@@ -19,28 +21,28 @@ func NewSecretEventHandler() handler.EventHandler {
 type secretEventHandler struct {
 }
 
-func (s secretEventHandler) Create(event event.CreateEvent, q workqueue.RateLimitingInterface) {
+func (s secretEventHandler) Create(ctx context.Context, event event.CreateEvent, q workqueue.RateLimitingInterface) {
 	secret, ok := event.Object.(*corev1.Secret)
 	if ok {
 		s.process(secret, q)
 	}
 }
 
-func (s secretEventHandler) Update(event event.UpdateEvent, q workqueue.RateLimitingInterface) {
+func (s secretEventHandler) Update(ctx context.Context, event event.UpdateEvent, q workqueue.RateLimitingInterface) {
 	secret, ok := event.ObjectNew.(*corev1.Secret)
 	if ok {
 		s.process(secret, q)
 	}
 }
 
-func (s secretEventHandler) Delete(event event.DeleteEvent, q workqueue.RateLimitingInterface) {
+func (s secretEventHandler) Delete(ctx context.Context, event event.DeleteEvent, q workqueue.RateLimitingInterface) {
 	secret, ok := event.Object.(*corev1.Secret)
 	if ok {
 		s.process(secret, q)
 	}
 }
 
-func (s secretEventHandler) Generic(event event.GenericEvent, q workqueue.RateLimitingInterface) {
+func (s secretEventHandler) Generic(ctx context.Context, event event.GenericEvent, q workqueue.RateLimitingInterface) {
 	secret, ok := event.Object.(*corev1.Secret)
 	if ok {
 		s.process(secret, q)
