@@ -2,7 +2,7 @@ package controller
 
 import (
 	"context"
-	"io/ioutil"
+	"os"
 
 	"github.com/pkg/errors"
 	authv1 "k8s.io/api/authentication/v1"
@@ -42,15 +42,13 @@ func (r *TokenReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&authv1alpha1.ManagedServiceAccount{}).
 		Watches(
-			&source.Kind{
-				Type: &corev1.Secret{},
-			},
+			&corev1.Secret{},
 			event.NewSecretEventHandler(),
 		).
-		Watches(
-			source.NewKindWithCache(
-				&corev1.ServiceAccount{},
+		WatchesRawSource(
+			source.Kind(
 				r.SpokeCache,
+				&corev1.ServiceAccount{},
 			),
 			event.NewServiceAccountEventHandler(r.ClusterName),
 		).
@@ -112,7 +110,7 @@ func (r *TokenReconciler) Reconcile(ctx context.Context, request reconcile.Reque
 	caData := r.SpokeClientConfig.CAData
 	if len(caData) == 0 {
 		var err error
-		caData, err = ioutil.ReadFile(r.SpokeClientConfig.CAFile)
+		caData, err = os.ReadFile(r.SpokeClientConfig.CAFile)
 		if err != nil {
 			return reconcile.Result{}, errors.Wrapf(err, "failed to read CA data from file")
 		}

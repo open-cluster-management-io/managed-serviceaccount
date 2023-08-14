@@ -1,4 +1,4 @@
-FROM golang:1.19-bullseye AS builder
+FROM golang:1.20-bullseye AS builder
 WORKDIR /go/src/github.com/open-cluster-management.io/managed-serviceaccount
 COPY . .
 RUN go env

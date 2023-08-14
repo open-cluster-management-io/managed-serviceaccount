@@ -1,6 +1,8 @@
 package event
 
 import (
+	"context"
+
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/util/workqueue"
@@ -22,24 +24,28 @@ type serviceAccountEventHandler struct {
 	clusterName string
 }
 
-func (s serviceAccountEventHandler) Create(event event.CreateEvent, q workqueue.RateLimitingInterface) {
+func (s serviceAccountEventHandler) Create(ctx context.Context, event event.CreateEvent,
+	q workqueue.RateLimitingInterface) {
 	serviceAccount, ok := event.Object.(*corev1.ServiceAccount)
 	if ok {
 		s.process(serviceAccount, q)
 	}
 }
 
-func (s serviceAccountEventHandler) Update(event event.UpdateEvent, q workqueue.RateLimitingInterface) {
+func (s serviceAccountEventHandler) Update(ctx context.Context, event event.UpdateEvent,
+	q workqueue.RateLimitingInterface) {
 }
 
-func (s serviceAccountEventHandler) Delete(event event.DeleteEvent, q workqueue.RateLimitingInterface) {
+func (s serviceAccountEventHandler) Delete(ctx context.Context, event event.DeleteEvent,
+	q workqueue.RateLimitingInterface) {
 	serviceAccount, ok := event.Object.(*corev1.ServiceAccount)
 	if ok {
 		s.process(serviceAccount, q)
 	}
 }
 
-func (s serviceAccountEventHandler) Generic(event event.GenericEvent, q workqueue.RateLimitingInterface) {
+func (s serviceAccountEventHandler) Generic(ctx context.Context, event event.GenericEvent,
+	q workqueue.RateLimitingInterface) {
 	serviceAccount, ok := event.Object.(*corev1.ServiceAccount)
 	if ok {
 		s.process(serviceAccount, q)
