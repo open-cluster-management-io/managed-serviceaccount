@@ -2,25 +2,17 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
   name: managed-serviceaccount-addon-agent
-  # namespace: local-cluster
 rules:
 - apiGroups:
   - ""
   resources:
-  - events
+  - secrets
   verbs:
   - get
   - list
+  - watch
   - create
   - update
-  - patch
-- apiGroups:
-  - ""
-  resources:
-  - secrets
-  - configmaps
-  verbs:
-  - '*'
 - apiGroups:
   - authentication.open-cluster-management.io
   resources:
@@ -29,29 +21,14 @@ rules:
   - get
   - list
   - watch
-- apiGroups:
-  - authentication.open-cluster-management.io
-  resources:
-  - managedserviceaccounts/status
-  verbs:
-  - get
   - update
   - patch
-- apiGroups:
-  - coordination.k8s.io
-  resources:
-  - leases
-  verbs:
-  - '*'
+  - delete
 - apiGroups:
     - authentication.open-cluster-management.io
   resources:
-    - managedserviceaccounts
     - managedserviceaccounts/status
   verbs:
     - get
-    - list
-    - watch
     - update
     - patch
-    - delete
