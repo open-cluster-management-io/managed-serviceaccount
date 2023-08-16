@@ -7,6 +7,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	fakekube "k8s.io/client-go/kubernetes/fake"
 	clienttesting "k8s.io/client-go/testing"
 	"open-cluster-management.io/addon-framework/pkg/addonfactory"
@@ -90,6 +91,93 @@ func TestManifestAddonAgent(t *testing.T) {
 	}
 }
 
+func TestManifestOrphan(t *testing.T) {
+	clusterName := "cluster1"
+	addonName := "addon1"
+	imageName := "imageName1"
+
+	cases := []struct {
+		name             string
+		getValuesFunc    []addonfactory.GetValuesFunc
+		installNamespace string
+		validate         func(t *testing.T, manifests []runtime.Object)
+	}{
+		{
+			name:             "install namespace is open-cluster-management-agent-addon",
+			getValuesFunc:    []addonfactory.GetValuesFunc{GetDefaultValues(imageName, newTestImagePullSecret())},
+			installNamespace: "open-cluster-management-agent-addon",
+			validate: func(t *testing.T, manifests []runtime.Object) {
+				nsFound := false
+				secretFound := false
+				for _, manifest := range manifests {
+					obj, ok := manifest.(metav1.ObjectMetaAccessor)
+					assert.True(t, ok, "invalid manifest")
+
+					namespace, nok := obj.(*corev1.Namespace)
+					if nok {
+						assert.Equal(t, map[string]string{"addon.open-cluster-management.io/deletion-orphan": ""},
+							namespace.Annotations, "invalid namespace annotations")
+						nsFound = true
+						continue
+					}
+
+					secret, sok := obj.(*corev1.Secret)
+					if sok {
+						if secret.Name == "open-cluster-management-image-pull-credentials" {
+							secretFound = true
+						}
+					}
+				}
+				assert.True(t, nsFound, "namespace not found")
+				assert.False(t, secretFound, "pull secret found")
+			},
+		},
+		{
+			name:             "install namespace is not open-cluster-management-agent-addon",
+			getValuesFunc:    []addonfactory.GetValuesFunc{GetDefaultValues(imageName, newTestImagePullSecret())},
+			installNamespace: "test",
+			validate: func(t *testing.T, manifests []runtime.Object) {
+				nsFound := false
+				secretFound := false
+				for _, manifest := range manifests {
+					obj, ok := manifest.(metav1.ObjectMetaAccessor)
+					assert.True(t, ok, "invalid manifest")
+
+					namespace, nok := obj.(*corev1.Namespace)
+					if nok {
+						assert.Nil(t, namespace.Annotations, "invalid namespace annotations")
+						nsFound = true
+						continue
+					}
+
+					secret, sok := obj.(*corev1.Secret)
+					if sok {
+						if secret.Name == "open-cluster-management-image-pull-credentials" {
+							secretFound = true
+						}
+					}
+				}
+				assert.True(t, nsFound, "namespace not found")
+				assert.True(t, secretFound, "pull secret not found")
+			},
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			agentFactory := addonfactory.NewAgentAddonFactory(common.AddonName, FS, "manifests/templates").
+				WithGetValuesFuncs(c.getValuesFunc...)
+
+			addOnAgent, err := agentFactory.BuildTemplateAgentAddon()
+			assert.NoError(t, err)
+
+			manifests, err := addOnAgent.Manifests(newTestCluster(clusterName),
+				newTestAddOnWithInstallNamespace(addonName, clusterName, c.installNamespace))
+			assert.NoError(t, err)
+			c.validate(t, manifests)
+		})
+	}
+}
+
 func newTestImagePullSecret() *corev1.Secret {
 	return &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
@@ -120,4 +208,18 @@ func newTestAddOn(name, namespace string) *addonv1alpha1.ManagedClusterAddOn {
 			InstallNamespace: name,
 		},
 	}
+}
+
+func newTestAddOnWithInstallNamespace(name, namespace, installNamespace string) *addonv1alpha1.ManagedClusterAddOn {
+	addon := &addonv1alpha1.ManagedClusterAddOn{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+		Spec: addonv1alpha1.ManagedClusterAddOnSpec{
+			InstallNamespace: name,
+		},
+	}
+	addon.Spec.InstallNamespace = installNamespace
+	return addon
 }
