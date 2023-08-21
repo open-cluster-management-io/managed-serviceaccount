@@ -70,13 +70,8 @@ func setupPermission(nativeClient kubernetes.Interface) agent.PermissionConfigFu
 			Rules: []rbacv1.PolicyRule{
 				{
 					APIGroups: []string{""},
-					Verbs:     []string{"get", "list", "create", "update", "patch"},
-					Resources: []string{"events"},
-				},
-				{
-					APIGroups: []string{""},
-					Verbs:     []string{"*"},
-					Resources: []string{"secrets", "configmaps"},
+					Verbs:     []string{"get", "list", "watch", "create", "update"},
+					Resources: []string{"secrets"},
 				},
 				{
 					APIGroups: []string{"authentication.open-cluster-management.io"},
@@ -87,11 +82,6 @@ func setupPermission(nativeClient kubernetes.Interface) agent.PermissionConfigFu
 					APIGroups: []string{"authentication.open-cluster-management.io"},
 					Verbs:     []string{"get", "update", "patch"},
 					Resources: []string{"managedserviceaccounts/status"},
-				},
-				{
-					APIGroups: []string{"coordination.k8s.io"},
-					Verbs:     []string{"*"},
-					Resources: []string{"leases"},
 				},
 			},
 		}
