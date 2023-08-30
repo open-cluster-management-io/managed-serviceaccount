@@ -1,3 +1,4 @@
+{{- if ne .Values.hubDeployMode "AddOnTemplate" }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -30,3 +31,4 @@ spec:
             {{- if .Values.agentImagePullSecret }}
             - --agent-image-pull-secret={{ .Values.agentImagePullSecret }}
             {{- end}}
+{{- end }}
