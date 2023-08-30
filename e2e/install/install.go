@@ -43,7 +43,7 @@ var _ = Describe("Addon Installation Test", Label("install"),
 		})
 
 		It("Addon should can be configured with AddOnDeployMentConfig", func() {
-			deployConfigName := "deploy-config"
+			deployConfigName := "tolerations-deploy-config"
 			nodeSelector := map[string]string{"kubernetes.io/os": "linux"}
 			tolerations := []corev1.Toleration{{Key: "node-role.kubernetes.io/infra", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoSchedule}}
 
