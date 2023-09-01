@@ -2,39 +2,38 @@ package token
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	authv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	addonv1alpha1 "open-cluster-management.io/api/addon/v1alpha1"
-	authv1beta1 "open-cluster-management.io/managed-serviceaccount/api/v1beta1"
+	"open-cluster-management.io/managed-serviceaccount/api/v1alpha1"
 	"open-cluster-management.io/managed-serviceaccount/e2e/framework"
 	"open-cluster-management.io/managed-serviceaccount/pkg/common"
 )
 
-const tokenTestBasename = "token"
+const tokenv1alpha1TestBasename = "token-v1alpha1"
 
-var _ = Describe("Token Test for Managed Service Account v1beta1",
+var _ = Describe("Token Test",
 	func() {
-		f := framework.NewE2EFramework(tokenTestBasename)
+		f := framework.NewE2EFramework(tokenv1alpha1TestBasename)
 		targetName := "e2e-" + framework.RunID
 
 		It("Token projection should work", func() {
-			msa := &authv1beta1.ManagedServiceAccount{
+			msa := &v1alpha1.ManagedServiceAccount{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: f.TestClusterName(),
 					Name:      targetName,
 				},
-				Spec: authv1beta1.ManagedServiceAccountSpec{
-					Rotation: authv1beta1.ManagedServiceAccountRotation{
+				Spec: v1alpha1.ManagedServiceAccountSpec{
+					Rotation: v1alpha1.ManagedServiceAccountRotation{
 						Enabled:  true,
 						Validity: metav1.Duration{Duration: time.Minute * 30},
 					},
@@ -65,16 +64,16 @@ var _ = Describe("Token Test for Managed Service Account v1beta1",
 
 			By("Validate the status of ManagedServiceAccount")
 			Eventually(func() (bool, error) {
-				latest := &authv1beta1.ManagedServiceAccount{}
+				latest := &v1alpha1.ManagedServiceAccount{}
 				err = f.HubRuntimeClient().Get(context.TODO(), types.NamespacedName{
 					Namespace: f.TestClusterName(),
 					Name:      targetName,
 				}, latest)
 				Expect(err).NotTo(HaveOccurred())
-				if !meta.IsStatusConditionTrue(latest.Status.Conditions, authv1beta1.ConditionTypeSecretCreated) {
+				if !meta.IsStatusConditionTrue(latest.Status.Conditions, v1alpha1.ConditionTypeSecretCreated) {
 					return false, nil
 				}
-				if !meta.IsStatusConditionTrue(latest.Status.Conditions, authv1beta1.ConditionTypeTokenReported) {
+				if !meta.IsStatusConditionTrue(latest.Status.Conditions, v1alpha1.ConditionTypeTokenReported) {
 					return false, nil
 				}
 				if latest.Status.TokenSecretRef == nil {
@@ -95,7 +94,7 @@ var _ = Describe("Token Test for Managed Service Account v1beta1",
 		})
 
 		It("Token secret deletion should be reconciled", func() {
-			latest := &authv1beta1.ManagedServiceAccount{}
+			latest := &v1alpha1.ManagedServiceAccount{}
 			err := f.HubRuntimeClient().Get(context.TODO(), types.NamespacedName{
 				Namespace: f.TestClusterName(),
 				Name:      targetName,
@@ -135,7 +134,7 @@ var _ = Describe("Token Test for Managed Service Account v1beta1",
 			}, addon)
 			Expect(err).NotTo(HaveOccurred())
 
-			msa := &authv1beta1.ManagedServiceAccount{}
+			msa := &v1alpha1.ManagedServiceAccount{}
 			err = f.HubRuntimeClient().Get(context.TODO(), types.NamespacedName{
 				Namespace: f.TestClusterName(),
 				Name:      targetName,
@@ -162,102 +161,43 @@ var _ = Describe("Token Test for Managed Service Account v1beta1",
 			})
 
 			//managed serviceaccount should be deleted
-			Eventually(func() error {
-				msa := &authv1beta1.ManagedServiceAccount{}
+			Eventually(func() bool {
+				msa := &v1alpha1.ManagedServiceAccount{}
 				err = f.HubRuntimeClient().Get(context.TODO(), types.NamespacedName{
 					Namespace: f.TestClusterName(),
 					Name:      targetName,
 				}, msa)
-				if err == nil {
-					return fmt.Errorf("managed serviceaccount %s/%s still exists", f.TestClusterName(), targetName)
+				if errors.IsNotFound(err) {
+					return true
 				}
-				if apierrors.IsNotFound(err) {
-					return nil
-				}
-				return err
-			}, time.Minute, time.Second).ShouldNot(HaveOccurred())
+				return false
+			}, time.Minute, time.Second).Should(BeTrue())
 
 			//token secret should be deleted
-			Eventually(func() error {
+			Eventually(func() bool {
 				secret := &corev1.Secret{}
 				err = f.HubRuntimeClient().Get(context.TODO(), types.NamespacedName{
 					Namespace: f.TestClusterName(),
 					Name:      msa.Status.TokenSecretRef.Name,
 				}, secret)
-				if err == nil {
-					return fmt.Errorf("token secret %s/%s still exists", f.TestClusterName(), msa.Status.TokenSecretRef.Name)
+				if errors.IsNotFound(err) {
+					return true
 				}
-				if apierrors.IsNotFound(err) {
-					return nil
-				}
-				return err
-			}, time.Minute, time.Second).ShouldNot(HaveOccurred())
+				return false
+			}, time.Minute, time.Second).Should(BeTrue())
 
 			//serviceaccount should be deleted
-			Eventually(func() error {
+			Eventually(func() bool {
 				serviceAccount := &corev1.ServiceAccount{}
 				err = f.HubRuntimeClient().Get(context.TODO(), types.NamespacedName{
 					Namespace: addon.Spec.InstallNamespace,
 					Name:      targetName,
 				}, serviceAccount)
-				if err == nil {
-					return fmt.Errorf("serviceaccount %s/%s still exists", addon.Spec.InstallNamespace, targetName)
+				if errors.IsNotFound(err) {
+					return true
 				}
-				if apierrors.IsNotFound(err) {
-					return nil
-				}
-				return err
-			}, time.Minute, time.Second).ShouldNot(HaveOccurred())
+				return false
+			}, time.Minute, time.Second).Should(BeTrue())
 		})
 	},
 )
-
-func validateToken(f framework.Framework, targetName string) {
-	var err error
-	addon := &addonv1alpha1.ManagedClusterAddOn{}
-	err = f.HubRuntimeClient().Get(context.TODO(), types.NamespacedName{
-		Namespace: f.TestClusterName(),
-		Name:      common.AddonName,
-	}, addon)
-	Expect(err).NotTo(HaveOccurred())
-
-	latest := &authv1beta1.ManagedServiceAccount{}
-	err = f.HubRuntimeClient().Get(context.TODO(), types.NamespacedName{
-		Namespace: f.TestClusterName(),
-		Name:      targetName,
-	}, latest)
-	Expect(err).NotTo(HaveOccurred())
-
-	expectedUserName := fmt.Sprintf(
-		"system:serviceaccount:%s:%s",
-		addon.Spec.InstallNamespace,
-		latest.Name,
-	)
-
-	secret := &corev1.Secret{}
-	err = f.HubRuntimeClient().Get(context.TODO(), types.NamespacedName{
-		Namespace: f.TestClusterName(),
-		Name:      latest.Status.TokenSecretRef.Name,
-	}, secret)
-	Expect(err).NotTo(HaveOccurred())
-
-	token := secret.Data[corev1.ServiceAccountTokenKey]
-	Expect(token).NotTo(BeEmpty())
-	tokenReview := &authv1.TokenReview{
-		TypeMeta: metav1.TypeMeta{
-			Kind:       "TokenReview",
-			APIVersion: "authentication.k8s.io/v1",
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			GenerateName: "token-review-request",
-		},
-		Spec: authv1.TokenReviewSpec{
-			Token: string(token),
-		},
-	}
-	err = f.HubRuntimeClient().Create(context.TODO(), tokenReview)
-	Expect(err).NotTo(HaveOccurred())
-
-	Expect(tokenReview.Status.Authenticated).To(BeTrue())
-	Expect(tokenReview.Status.User.Username).To(Equal(expectedUserName))
-}
