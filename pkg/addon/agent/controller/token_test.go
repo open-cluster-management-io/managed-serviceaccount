@@ -19,7 +19,6 @@ import (
 	"k8s.io/client-go/rest"
 	clienttesting "k8s.io/client-go/testing"
 	authv1alpha1 "open-cluster-management.io/managed-serviceaccount/api/v1alpha1"
-	"open-cluster-management.io/managed-serviceaccount/pkg/generated/clientset/versioned/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -205,7 +204,7 @@ func TestReconcile(t *testing.T) {
 			)
 
 			// create fake client of the hub cluster
-			testscheme := scheme.Scheme
+			testscheme := runtime.NewScheme()
 			authv1alpha1.AddToScheme(testscheme)
 			corev1.AddToScheme(testscheme)
 			var objects []client.Object

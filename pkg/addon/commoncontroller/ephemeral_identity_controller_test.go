@@ -14,7 +14,6 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	clock "k8s.io/utils/clock/testing"
 	authv1alpha1 "open-cluster-management.io/managed-serviceaccount/api/v1alpha1"
-	"open-cluster-management.io/managed-serviceaccount/pkg/generated/clientset/versioned/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -81,7 +80,7 @@ func TestReconcile(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			// create fake client of the hub cluster
-			testscheme := scheme.Scheme
+			testscheme := runtime.NewScheme()
 			authv1alpha1.AddToScheme(testscheme)
 
 			objs := []runtime.Object{}

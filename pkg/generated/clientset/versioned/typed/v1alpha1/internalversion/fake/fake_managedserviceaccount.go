@@ -22,7 +22,6 @@ import (
 
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	labels "k8s.io/apimachinery/pkg/labels"
-	schema "k8s.io/apimachinery/pkg/runtime/schema"
 	types "k8s.io/apimachinery/pkg/types"
 	watch "k8s.io/apimachinery/pkg/watch"
 	testing "k8s.io/client-go/testing"
@@ -35,9 +34,9 @@ type FakeManagedServiceAccounts struct {
 	ns   string
 }
 
-var managedserviceaccountsResource = schema.GroupVersionResource{Group: "authentication.open-cluster-management.io", Version: "", Resource: "managedserviceaccounts"}
+var managedserviceaccountsResource = v1alpha1.SchemeGroupVersion.WithResource("managedserviceaccounts")
 
-var managedserviceaccountsKind = schema.GroupVersionKind{Group: "authentication.open-cluster-management.io", Version: "", Kind: "ManagedServiceAccount"}
+var managedserviceaccountsKind = v1alpha1.SchemeGroupVersion.WithKind("ManagedServiceAccount")
 
 // Get takes name of the managedServiceAccount, and returns the corresponding managedServiceAccount object, and an error if there is any.
 func (c *FakeManagedServiceAccounts) Get(ctx context.Context, name string, options v1.GetOptions) (result *v1alpha1.ManagedServiceAccount, err error) {
