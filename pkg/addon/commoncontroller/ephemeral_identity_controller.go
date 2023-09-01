@@ -15,7 +15,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	authv1alpha1 "open-cluster-management.io/managed-serviceaccount/api/v1alpha1"
+	authv1beta1 "open-cluster-management.io/managed-serviceaccount/api/v1beta1"
 )
 
 func NewEphemeralIdentityReconciler(cache cache.Cache, hubClient client.Client) *EphemeralIdentityReconciler {
@@ -37,9 +37,9 @@ type EphemeralIdentityReconciler struct {
 // SetupWithManager sets up the controller with the Manager.
 func (r *EphemeralIdentityReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&authv1alpha1.ManagedServiceAccount{}).
+		For(&authv1beta1.ManagedServiceAccount{}).
 		Watches(
-			&authv1alpha1.ManagedServiceAccount{},
+			&authv1beta1.ManagedServiceAccount{},
 			&handler.EnqueueRequestForObject{},
 		).Complete(r)
 }
@@ -47,7 +47,7 @@ func (r *EphemeralIdentityReconciler) SetupWithManager(mgr ctrl.Manager) error {
 func (r *EphemeralIdentityReconciler) Reconcile(ctx context.Context, request reconcile.Request) (reconcile.Result, error) {
 	logger := log.FromContext(ctx)
 	logger.Info("Start reconciling")
-	managed := &authv1alpha1.ManagedServiceAccount{}
+	managed := &authv1beta1.ManagedServiceAccount{}
 	if err := r.Cache.Get(ctx, request.NamespacedName, managed); err != nil {
 		if !apierrors.IsNotFound(err) {
 			return reconcile.Result{}, errors.Wrapf(err, "fail to get managed serviceaccount")

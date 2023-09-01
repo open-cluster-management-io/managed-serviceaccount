@@ -13,7 +13,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	clock "k8s.io/utils/clock/testing"
-	authv1alpha1 "open-cluster-management.io/managed-serviceaccount/api/v1alpha1"
+	authv1beta1 "open-cluster-management.io/managed-serviceaccount/api/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -27,7 +27,7 @@ func TestReconcile(t *testing.T) {
 
 	cases := []struct {
 		name           string
-		msa            *authv1alpha1.ManagedServiceAccount
+		msa            *authv1beta1.ManagedServiceAccount
 		getError       error
 		expectedResult reconcile.Result
 		expectedError  string
@@ -50,7 +50,7 @@ func TestReconcile(t *testing.T) {
 			name: "expired",
 			msa:  newManagedServiceAccount(clusterName, msaName).withTTLSecondsAfterCreation(now.Add(-1000*time.Second), 800).build(),
 			validateFunc: func(t *testing.T, hubClient client.Client) {
-				msa := &authv1alpha1.ManagedServiceAccount{}
+				msa := &authv1beta1.ManagedServiceAccount{}
 				err := hubClient.Get(context.TODO(), types.NamespacedName{
 					Namespace: clusterName,
 					Name:      msaName,
@@ -67,7 +67,7 @@ func TestReconcile(t *testing.T) {
 				RequeueAfter: 1000 * time.Second,
 			},
 			validateFunc: func(t *testing.T, hubClient client.Client) {
-				msa := &authv1alpha1.ManagedServiceAccount{}
+				msa := &authv1beta1.ManagedServiceAccount{}
 				err := hubClient.Get(context.TODO(), types.NamespacedName{
 					Namespace: clusterName,
 					Name:      msaName,
@@ -81,7 +81,7 @@ func TestReconcile(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			// create fake client of the hub cluster
 			testscheme := runtime.NewScheme()
-			authv1alpha1.AddToScheme(testscheme)
+			authv1beta1.AddToScheme(testscheme)
 
 			objs := []runtime.Object{}
 			if c.msa != nil {
@@ -110,7 +110,7 @@ func TestReconcile(t *testing.T) {
 }
 
 type fakeCache struct {
-	msa      *authv1alpha1.ManagedServiceAccount
+	msa      *authv1beta1.ManagedServiceAccount
 	getError error
 }
 
@@ -119,14 +119,14 @@ func (f fakeCache) Get(ctx context.Context, key client.ObjectKey, obj client.Obj
 		return f.getError
 	}
 
-	msa, ok := obj.(*authv1alpha1.ManagedServiceAccount)
+	msa, ok := obj.(*authv1beta1.ManagedServiceAccount)
 	if !ok {
 		panic("implement me")
 	}
 
 	if f.msa == nil {
 		return apierrors.NewNotFound(schema.GroupResource{
-			Group:    authv1alpha1.GroupVersion.Group,
+			Group:    authv1beta1.GroupVersion.Group,
 			Resource: "managedserviceaccounts",
 		}, key.Name)
 	}
@@ -168,12 +168,12 @@ func (f fakeCache) GetInformerForKind(ctx context.Context, gvk schema.GroupVersi
 }
 
 type managedServiceAccountBuilder struct {
-	msa *authv1alpha1.ManagedServiceAccount
+	msa *authv1beta1.ManagedServiceAccount
 }
 
 func newManagedServiceAccount(namespace, name string) *managedServiceAccountBuilder {
 	return &managedServiceAccountBuilder{
-		msa: &authv1alpha1.ManagedServiceAccount{
+		msa: &authv1beta1.ManagedServiceAccount{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      name,
 				Namespace: namespace,
@@ -182,7 +182,7 @@ func newManagedServiceAccount(namespace, name string) *managedServiceAccountBuil
 	}
 }
 
-func (b *managedServiceAccountBuilder) build() *authv1alpha1.ManagedServiceAccount {
+func (b *managedServiceAccountBuilder) build() *authv1beta1.ManagedServiceAccount {
 	return b.msa
 }
 

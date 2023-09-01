@@ -26,7 +26,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 
-	authv1alpha1 "open-cluster-management.io/managed-serviceaccount/api/v1alpha1"
+	authv1beta1 "open-cluster-management.io/managed-serviceaccount/api/v1beta1"
 	"open-cluster-management.io/managed-serviceaccount/pkg/addon/agent/controller"
 	"open-cluster-management.io/managed-serviceaccount/pkg/addon/agent/health"
 	"open-cluster-management.io/managed-serviceaccount/pkg/addon/commoncontroller"
@@ -41,7 +41,7 @@ var (
 
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
-	utilruntime.Must(authv1alpha1.AddToScheme(scheme))
+	utilruntime.Must(authv1beta1.AddToScheme(scheme))
 }
 
 func main() {
