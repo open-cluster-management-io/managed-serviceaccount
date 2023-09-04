@@ -18,8 +18,7 @@ import (
 	fakekube "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/rest"
 	clienttesting "k8s.io/client-go/testing"
-	authv1alpha1 "open-cluster-management.io/managed-serviceaccount/api/v1alpha1"
-	"open-cluster-management.io/managed-serviceaccount/pkg/generated/clientset/versioned/scheme"
+	authv1beta1 "open-cluster-management.io/managed-serviceaccount/apis/authentication/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -36,7 +35,7 @@ func TestReconcile(t *testing.T) {
 
 	cases := []struct {
 		name                   string
-		msa                    *authv1alpha1.ManagedServiceAccount
+		msa                    *authv1beta1.ManagedServiceAccount
 		sa                     *corev1.ServiceAccount
 		secret                 *corev1.Secret
 		getError               error
@@ -71,11 +70,11 @@ func TestReconcile(t *testing.T) {
 				assertToken(t, hubClient, clusterName, msaName, token1, ca1)
 				assertMSAConditions(t, hubClient, clusterName, msaName, []metav1.Condition{
 					{
-						Type:   authv1alpha1.ConditionTypeTokenReported,
+						Type:   authv1beta1.ConditionTypeTokenReported,
 						Status: metav1.ConditionTrue,
 					},
 					{
-						Type:   authv1alpha1.ConditionTypeSecretCreated,
+						Type:   authv1beta1.ConditionTypeSecretCreated,
 						Status: metav1.ConditionTrue,
 					},
 				})
@@ -113,7 +112,7 @@ func TestReconcile(t *testing.T) {
 				assertToken(t, hubClient, clusterName, msaName, token2, ca1)
 				assertMSAConditions(t, hubClient, clusterName, msaName, []metav1.Condition{
 					{
-						Type:   authv1alpha1.ConditionTypeTokenReported,
+						Type:   authv1beta1.ConditionTypeTokenReported,
 						Status: metav1.ConditionTrue,
 					},
 				})
@@ -137,7 +136,7 @@ func TestReconcile(t *testing.T) {
 				assertToken(t, hubClient, clusterName, msaName, token1, ca1)
 				assertMSAConditions(t, hubClient, clusterName, msaName, []metav1.Condition{
 					{
-						Type:   authv1alpha1.ConditionTypeTokenReported,
+						Type:   authv1beta1.ConditionTypeTokenReported,
 						Status: metav1.ConditionTrue,
 					},
 				})
@@ -205,8 +204,8 @@ func TestReconcile(t *testing.T) {
 			)
 
 			// create fake client of the hub cluster
-			testscheme := scheme.Scheme
-			authv1alpha1.AddToScheme(testscheme)
+			testscheme := runtime.NewScheme()
+			authv1beta1.AddToScheme(testscheme)
 			corev1.AddToScheme(testscheme)
 			var objects []client.Object
 			if c.msa != nil {
@@ -328,7 +327,7 @@ func TestMergeConditions(t *testing.T) {
 }
 
 type fakeCache struct {
-	msa      *authv1alpha1.ManagedServiceAccount
+	msa      *authv1beta1.ManagedServiceAccount
 	getError error
 }
 
@@ -337,14 +336,14 @@ func (f fakeCache) Get(ctx context.Context, key client.ObjectKey, obj client.Obj
 		return f.getError
 	}
 
-	msa, ok := obj.(*authv1alpha1.ManagedServiceAccount)
+	msa, ok := obj.(*authv1beta1.ManagedServiceAccount)
 	if !ok {
 		panic("implement me")
 	}
 
 	if f.msa == nil {
 		return apierrors.NewNotFound(schema.GroupResource{
-			Group:    authv1alpha1.GroupVersion.Group,
+			Group:    authv1beta1.GroupVersion.Group,
 			Resource: "managedserviceaccounts",
 		}, key.Name)
 	}
@@ -386,12 +385,12 @@ func (f fakeCache) GetInformerForKind(ctx context.Context, gvk schema.GroupVersi
 }
 
 type managedServiceAccountBuilder struct {
-	msa *authv1alpha1.ManagedServiceAccount
+	msa *authv1beta1.ManagedServiceAccount
 }
 
 func newManagedServiceAccount(namespace, name string) *managedServiceAccountBuilder {
 	return &managedServiceAccountBuilder{
-		msa: &authv1alpha1.ManagedServiceAccount{
+		msa: &authv1beta1.ManagedServiceAccount{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      name,
 				Namespace: namespace,
@@ -400,7 +399,7 @@ func newManagedServiceAccount(namespace, name string) *managedServiceAccountBuil
 	}
 }
 
-func (b *managedServiceAccountBuilder) build() *authv1alpha1.ManagedServiceAccount {
+func (b *managedServiceAccountBuilder) build() *authv1beta1.ManagedServiceAccount {
 	return b.msa
 }
 
@@ -412,7 +411,7 @@ func (b *managedServiceAccountBuilder) withRotationValidity(duration time.Durati
 }
 
 func (b *managedServiceAccountBuilder) withTokenSecretRef(secretName string, expirationTimestamp time.Time) *managedServiceAccountBuilder {
-	b.msa.Status.TokenSecretRef = &authv1alpha1.SecretRef{
+	b.msa.Status.TokenSecretRef = &authv1beta1.SecretRef{
 		Name: secretName,
 	}
 	timestamp := metav1.NewTime(expirationTimestamp)
@@ -481,7 +480,7 @@ func assertToken(t *testing.T, client client.Client, secretNamespace, secretName
 }
 
 func assertMSAConditions(t *testing.T, client client.Client, msaNamespace, msaName string, expected []metav1.Condition) {
-	msa := &authv1alpha1.ManagedServiceAccount{}
+	msa := &authv1beta1.ManagedServiceAccount{}
 	err := client.Get(context.TODO(), types.NamespacedName{
 		Namespace: msaNamespace,
 		Name:      msaName,

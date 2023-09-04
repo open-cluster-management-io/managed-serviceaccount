@@ -95,7 +95,7 @@ undeploy: ## Undeploy controller from the K8s cluster specified in ~/.kube/confi
 
 CONTROLLER_GEN = $(shell pwd)/bin/controller-gen
 controller-gen: ## Download controller-gen locally if necessary.
-	$(call go-get-tool,$(CONTROLLER_GEN),sigs.k8s.io/controller-tools/cmd/controller-gen@v0.4.1)
+	$(call go-get-tool,$(CONTROLLER_GEN),sigs.k8s.io/controller-tools/cmd/controller-gen@v0.6.2)
 
 KUSTOMIZE = $(shell pwd)/bin/kustomize
 kustomize: ## Download kustomize locally if necessary.
@@ -125,9 +125,12 @@ test-e2e: build-e2e
 	./bin/e2e --test-cluster $(E2E_TEST_CLUSTER_NAME) $(GENKGO_ARGS)
 
 client-gen:
-	go install sigs.k8s.io/apiserver-runtime/tools/apiserver-runtime-gen@v1.1.1
-	go install k8s.io/code-generator/cmd/client-gen@v0.21.2
-	apiserver-runtime-gen \
- 		--module open-cluster-management.io/managed-serviceaccount \
- 		-g client-gen \
- 		--versions=open-cluster-management.io/managed-serviceaccount/api/v1alpha1
+	go install k8s.io/code-generator/cmd/client-gen@v0.27.4
+	client-gen --go-header-file hack/boilerplate.go.txt --clientset-name versioned \
+		--output-base ./_output/gen \
+		--output-package open-cluster-management.io/managed-serviceaccount/pkg/generated/clientset \
+		--input-base open-cluster-management.io/managed-serviceaccount/apis \
+		--input authentication/v1alpha1,authentication/v1beta1
+	rm -rf pkg/generated/clientset/versioned
+	mv _output/gen/open-cluster-management.io/managed-serviceaccount/pkg/generated/clientset/versioned pkg/generated/clientset/versioned
+	rm -rf _output/gen
