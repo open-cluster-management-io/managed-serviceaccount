@@ -24,8 +24,10 @@ import (
 	fakediscovery "k8s.io/client-go/discovery/fake"
 	"k8s.io/client-go/testing"
 	clientset "open-cluster-management.io/managed-serviceaccount/pkg/generated/clientset/versioned"
-	authenticationinternalversion "open-cluster-management.io/managed-serviceaccount/pkg/generated/clientset/versioned/typed/v1alpha1/internalversion"
-	fakeauthenticationinternalversion "open-cluster-management.io/managed-serviceaccount/pkg/generated/clientset/versioned/typed/v1alpha1/internalversion/fake"
+	authenticationv1alpha1 "open-cluster-management.io/managed-serviceaccount/pkg/generated/clientset/versioned/typed/authentication/v1alpha1"
+	fakeauthenticationv1alpha1 "open-cluster-management.io/managed-serviceaccount/pkg/generated/clientset/versioned/typed/authentication/v1alpha1/fake"
+	authenticationv1beta1 "open-cluster-management.io/managed-serviceaccount/pkg/generated/clientset/versioned/typed/authentication/v1beta1"
+	fakeauthenticationv1beta1 "open-cluster-management.io/managed-serviceaccount/pkg/generated/clientset/versioned/typed/authentication/v1beta1/fake"
 )
 
 // NewSimpleClientset returns a clientset that will respond with the provided objects.
@@ -78,7 +80,12 @@ var (
 	_ testing.FakeClient  = &Clientset{}
 )
 
-// Authentication retrieves the AuthenticationClient
-func (c *Clientset) Authentication() authenticationinternalversion.AuthenticationInterface {
-	return &fakeauthenticationinternalversion.FakeAuthentication{Fake: &c.Fake}
+// AuthenticationV1alpha1 retrieves the AuthenticationV1alpha1Client
+func (c *Clientset) AuthenticationV1alpha1() authenticationv1alpha1.AuthenticationV1alpha1Interface {
+	return &fakeauthenticationv1alpha1.FakeAuthenticationV1alpha1{Fake: &c.Fake}
+}
+
+// AuthenticationV1beta1 retrieves the AuthenticationV1beta1Client
+func (c *Clientset) AuthenticationV1beta1() authenticationv1beta1.AuthenticationV1beta1Interface {
+	return &fakeauthenticationv1beta1.FakeAuthenticationV1beta1{Fake: &c.Fake}
 }

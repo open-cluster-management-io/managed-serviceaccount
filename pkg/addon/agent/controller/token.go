@@ -19,7 +19,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
-	authv1alpha1 "open-cluster-management.io/managed-serviceaccount/api/v1alpha1"
+	authv1beta1 "open-cluster-management.io/managed-serviceaccount/apis/authentication/v1beta1"
 	"open-cluster-management.io/managed-serviceaccount/pkg/common"
 	"open-cluster-management.io/managed-serviceaccount/pkg/controllers/event"
 )
@@ -40,7 +40,7 @@ type TokenReconciler struct {
 // SetupWithManager sets up the controller with the Manager.
 func (r *TokenReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&authv1alpha1.ManagedServiceAccount{}).
+		For(&authv1beta1.ManagedServiceAccount{}).
 		Watches(
 			&corev1.Secret{},
 			event.NewSecretEventHandler(),
@@ -58,7 +58,7 @@ func (r *TokenReconciler) SetupWithManager(mgr ctrl.Manager) error {
 func (r *TokenReconciler) Reconcile(ctx context.Context, request reconcile.Request) (reconcile.Result, error) {
 	logger := log.FromContext(ctx)
 	logger.Info("Start reconciling")
-	managed := &authv1alpha1.ManagedServiceAccount{}
+	managed := &authv1beta1.ManagedServiceAccount{}
 
 	if err := r.Cache.Get(ctx, request.NamespacedName, managed); err != nil {
 		if !apierrors.IsNotFound(err) {
@@ -131,7 +131,7 @@ func (r *TokenReconciler) Reconcile(ctx context.Context, request reconcile.Reque
 	now := metav1.Now()
 	conditions := []metav1.Condition{
 		{
-			Type:               authv1alpha1.ConditionTypeTokenReported,
+			Type:               authv1beta1.ConditionTypeTokenReported,
 			Status:             metav1.ConditionTrue,
 			Reason:             "TokenReported",
 			LastTransitionTime: now,
@@ -139,16 +139,16 @@ func (r *TokenReconciler) Reconcile(ctx context.Context, request reconcile.Reque
 	}
 	if !secretExists {
 		conditions = append(conditions, metav1.Condition{
-			Type:               authv1alpha1.ConditionTypeSecretCreated,
+			Type:               authv1beta1.ConditionTypeSecretCreated,
 			Status:             metav1.ConditionTrue,
 			Reason:             "SecretCreated",
 			LastTransitionTime: now,
 		})
 	}
-	status := authv1alpha1.ManagedServiceAccountStatus{
+	status := authv1beta1.ManagedServiceAccountStatus{
 		Conditions:          mergeConditions(managed.Status.Conditions, conditions),
 		ExpirationTimestamp: &expiring,
-		TokenSecretRef: &authv1alpha1.SecretRef{
+		TokenSecretRef: &authv1beta1.SecretRef{
 			Name:                 managed.Name,
 			LastRefreshTimestamp: now,
 		},
@@ -164,7 +164,7 @@ func (r *TokenReconciler) Reconcile(ctx context.Context, request reconcile.Reque
 	return reconcile.Result{}, nil
 }
 
-func (r *TokenReconciler) ensureServiceAccount(managed *authv1alpha1.ManagedServiceAccount) error {
+func (r *TokenReconciler) ensureServiceAccount(managed *authv1beta1.ManagedServiceAccount) error {
 	sa := &corev1.ServiceAccount{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: r.SpokeNamespace,
@@ -184,7 +184,7 @@ func (r *TokenReconciler) ensureServiceAccount(managed *authv1alpha1.ManagedServ
 	return nil
 }
 
-func (r *TokenReconciler) createToken(managed *authv1alpha1.ManagedServiceAccount) (string, metav1.Time, error) {
+func (r *TokenReconciler) createToken(managed *authv1beta1.ManagedServiceAccount) (string, metav1.Time, error) {
 	var expirationSec = int64(managed.Spec.Rotation.Validity.Seconds())
 	tr, err := r.SpokeNativeClient.CoreV1().ServiceAccounts(r.SpokeNamespace).
 		CreateToken(context.TODO(), managed.Name, &authv1.TokenRequest{
@@ -198,7 +198,7 @@ func (r *TokenReconciler) createToken(managed *authv1alpha1.ManagedServiceAccoun
 	return tr.Status.Token, tr.Status.ExpirationTimestamp, nil
 }
 
-func buildSecret(managed *authv1alpha1.ManagedServiceAccount, caData, tokenData []byte) *corev1.Secret {
+func buildSecret(managed *authv1beta1.ManagedServiceAccount, caData, tokenData []byte) *corev1.Secret {
 	return &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: managed.Namespace,
@@ -208,7 +208,7 @@ func buildSecret(managed *authv1alpha1.ManagedServiceAccount, caData, tokenData 
 			},
 			OwnerReferences: []metav1.OwnerReference{
 				{
-					APIVersion: authv1alpha1.GroupVersion.String(),
+					APIVersion: authv1beta1.GroupVersion.String(),
 					Kind:       "ManagedServiceAccount",
 					Name:       managed.Name,
 					UID:        managed.UID,
@@ -223,7 +223,7 @@ func buildSecret(managed *authv1alpha1.ManagedServiceAccount, caData, tokenData 
 	}
 }
 
-func (r *TokenReconciler) isSoonExpiring(managed *authv1alpha1.ManagedServiceAccount, tokenSecret *corev1.Secret) (bool, error) {
+func (r *TokenReconciler) isSoonExpiring(managed *authv1beta1.ManagedServiceAccount, tokenSecret *corev1.Secret) (bool, error) {
 	if managed.Status.TokenSecretRef == nil || tokenSecret == nil {
 		return true, nil
 	}

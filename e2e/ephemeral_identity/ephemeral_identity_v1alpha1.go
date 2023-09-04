@@ -2,7 +2,6 @@ package ephemeral_identity
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -11,15 +10,15 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	authv1beta1 "open-cluster-management.io/managed-serviceaccount/apis/authentication/v1beta1"
+	authv1alpha1 "open-cluster-management.io/managed-serviceaccount/apis/authentication/v1alpha1"
 	"open-cluster-management.io/managed-serviceaccount/e2e/framework"
 )
 
-const testBasename = "ephemeral"
+const testv1alpha1Basename = "ephemeral-v1alpha1"
 
 var _ = Describe("Ephemeral ManagedServiceAccount Test", Label("ephemeral"), func() {
-	f := framework.NewE2EFramework(testBasename)
-	targetName := "e2e-" + testBasename + "-" + framework.RunID
+	f := framework.NewE2EFramework(testv1alpha1Basename)
+	targetName := "e2e-" + testv1alpha1Basename + "-" + framework.RunID
 	var ttlSecond int32 = 2
 	ttlDuration := time.Duration(ttlSecond) * time.Second
 
@@ -27,7 +26,7 @@ var _ = Describe("Ephemeral ManagedServiceAccount Test", Label("ephemeral"), fun
 		var err error
 
 		By("Creating an ManagedServiceAccount with TTL")
-		msa := &authv1beta1.ManagedServiceAccount{
+		msa := &authv1alpha1.ManagedServiceAccount{
 			ObjectMeta: metav1.ObjectMeta{
 				Namespace: f.TestClusterName(),
 				Name:      targetName,
@@ -35,8 +34,8 @@ var _ = Describe("Ephemeral ManagedServiceAccount Test", Label("ephemeral"), fun
 					"prevent-resource-removal",
 				},
 			},
-			Spec: authv1beta1.ManagedServiceAccountSpec{
-				Rotation: authv1beta1.ManagedServiceAccountRotation{
+			Spec: authv1alpha1.ManagedServiceAccountSpec{
+				Rotation: authv1alpha1.ManagedServiceAccountRotation{
 					Enabled:  true,
 					Validity: metav1.Duration{Duration: time.Minute * 30},
 				},
@@ -50,7 +49,7 @@ var _ = Describe("Ephemeral ManagedServiceAccount Test", Label("ephemeral"), fun
 		time.Sleep(ttlDuration + time.Second)
 
 		By("Checking if ManagedServiceAccount have correct deletion timestamp")
-		latest := &authv1beta1.ManagedServiceAccount{}
+		latest := &authv1alpha1.ManagedServiceAccount{}
 		err = f.HubRuntimeClient().Get(context.TODO(), types.NamespacedName{
 			Namespace: f.TestClusterName(),
 			Name:      targetName,
@@ -73,18 +72,15 @@ var _ = Describe("Ephemeral ManagedServiceAccount Test", Label("ephemeral"), fun
 		err = f.HubRuntimeClient().Update(context.TODO(), latest)
 		Expect(err).ToNot(HaveOccurred())
 
-		Eventually(func() error {
+		Eventually(func() bool {
 			err = f.HubRuntimeClient().Get(context.TODO(), types.NamespacedName{
 				Namespace: f.TestClusterName(),
 				Name:      targetName,
 			}, latest)
-			if err == nil {
-				return fmt.Errorf("managed serviceaccount %s/%s still exists", f.TestClusterName(), targetName)
-			}
 			if errors.IsNotFound(err) {
-				return nil
+				return true
 			}
-			return err
-		}, time.Second*30, time.Second).ShouldNot(HaveOccurred())
+			return false
+		}, time.Second*30, time.Second).Should(BeTrue())
 	})
 })

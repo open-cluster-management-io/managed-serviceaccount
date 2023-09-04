@@ -20,20 +20,20 @@ package fake
 import (
 	rest "k8s.io/client-go/rest"
 	testing "k8s.io/client-go/testing"
-	internalversion "open-cluster-management.io/managed-serviceaccount/pkg/generated/clientset/versioned/typed/v1alpha1/internalversion"
+	v1alpha1 "open-cluster-management.io/managed-serviceaccount/pkg/generated/clientset/versioned/typed/authentication/v1alpha1"
 )
 
-type FakeAuthentication struct {
+type FakeAuthenticationV1alpha1 struct {
 	*testing.Fake
 }
 
-func (c *FakeAuthentication) ManagedServiceAccounts(namespace string) internalversion.ManagedServiceAccountInterface {
+func (c *FakeAuthenticationV1alpha1) ManagedServiceAccounts(namespace string) v1alpha1.ManagedServiceAccountInterface {
 	return &FakeManagedServiceAccounts{c, namespace}
 }
 
 // RESTClient returns a RESTClient that is used to communicate
 // with API server by this client implementation.
-func (c *FakeAuthentication) RESTClient() rest.Interface {
+func (c *FakeAuthenticationV1alpha1) RESTClient() rest.Interface {
 	var ret *rest.RESTClient
 	return ret
 }

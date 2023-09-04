@@ -60,7 +60,7 @@ Apply a sample "ManagedServiceAccount" resource to try the functionality:
 
 ```shell
 $ kubectl create -f - <<EOF
-apiVersion: authentication.open-cluster-management.io/v1alpha1
+apiVersion: authentication.open-cluster-management.io/v1beta1
 kind: ManagedServiceAccount
 metadata:
   name: my-sample

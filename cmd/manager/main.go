@@ -42,7 +42,7 @@ import (
 	"open-cluster-management.io/addon-framework/pkg/agent"
 	"open-cluster-management.io/addon-framework/pkg/utils"
 	addonclient "open-cluster-management.io/api/client/addon/clientset/versioned"
-	authv1alpha1 "open-cluster-management.io/managed-serviceaccount/api/v1alpha1"
+	authv1beta1 "open-cluster-management.io/managed-serviceaccount/apis/authentication/v1beta1"
 	"open-cluster-management.io/managed-serviceaccount/pkg/addon/commoncontroller"
 	"open-cluster-management.io/managed-serviceaccount/pkg/addon/manager"
 	"open-cluster-management.io/managed-serviceaccount/pkg/common"
@@ -59,7 +59,7 @@ var (
 
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
-	utilruntime.Must(authv1alpha1.AddToScheme(scheme))
+	utilruntime.Must(authv1beta1.AddToScheme(scheme))
 	//+kubebuilder:scaffold:scheme
 }
 
@@ -137,8 +137,8 @@ func main() {
 	}
 
 	_, err = mgr.GetRESTMapper().ResourceFor(schema.GroupVersionResource{
-		Group:    authv1alpha1.GroupVersion.Group,
-		Version:  authv1alpha1.GroupVersion.Version,
+		Group:    authv1beta1.GroupVersion.Group,
+		Version:  authv1beta1.GroupVersion.Version,
 		Resource: "managedserviceaccounts",
 	})
 	if err != nil {
