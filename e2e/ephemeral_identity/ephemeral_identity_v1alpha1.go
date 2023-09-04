@@ -10,7 +10,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	authv1alpha1 "open-cluster-management.io/managed-serviceaccount/api/v1alpha1"
+	authv1alpha1 "open-cluster-management.io/managed-serviceaccount/apis/authentication/v1alpha1"
 	"open-cluster-management.io/managed-serviceaccount/e2e/framework"
 )
 

@@ -25,34 +25,34 @@ import (
 	types "k8s.io/apimachinery/pkg/types"
 	watch "k8s.io/apimachinery/pkg/watch"
 	testing "k8s.io/client-go/testing"
-	v1alpha1 "open-cluster-management.io/managed-serviceaccount/api/v1alpha1"
+	v1beta1 "open-cluster-management.io/managed-serviceaccount/apis/authentication/v1beta1"
 )
 
 // FakeManagedServiceAccounts implements ManagedServiceAccountInterface
 type FakeManagedServiceAccounts struct {
-	Fake *FakeAuthentication
+	Fake *FakeAuthenticationV1beta1
 	ns   string
 }
 
-var managedserviceaccountsResource = v1alpha1.SchemeGroupVersion.WithResource("managedserviceaccounts")
+var managedserviceaccountsResource = v1beta1.SchemeGroupVersion.WithResource("managedserviceaccounts")
 
-var managedserviceaccountsKind = v1alpha1.SchemeGroupVersion.WithKind("ManagedServiceAccount")
+var managedserviceaccountsKind = v1beta1.SchemeGroupVersion.WithKind("ManagedServiceAccount")
 
 // Get takes name of the managedServiceAccount, and returns the corresponding managedServiceAccount object, and an error if there is any.
-func (c *FakeManagedServiceAccounts) Get(ctx context.Context, name string, options v1.GetOptions) (result *v1alpha1.ManagedServiceAccount, err error) {
+func (c *FakeManagedServiceAccounts) Get(ctx context.Context, name string, options v1.GetOptions) (result *v1beta1.ManagedServiceAccount, err error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewGetAction(managedserviceaccountsResource, c.ns, name), &v1alpha1.ManagedServiceAccount{})
+		Invokes(testing.NewGetAction(managedserviceaccountsResource, c.ns, name), &v1beta1.ManagedServiceAccount{})
 
 	if obj == nil {
 		return nil, err
 	}
-	return obj.(*v1alpha1.ManagedServiceAccount), err
+	return obj.(*v1beta1.ManagedServiceAccount), err
 }
 
 // List takes label and field selectors, and returns the list of ManagedServiceAccounts that match those selectors.
-func (c *FakeManagedServiceAccounts) List(ctx context.Context, opts v1.ListOptions) (result *v1alpha1.ManagedServiceAccountList, err error) {
+func (c *FakeManagedServiceAccounts) List(ctx context.Context, opts v1.ListOptions) (result *v1beta1.ManagedServiceAccountList, err error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewListAction(managedserviceaccountsResource, managedserviceaccountsKind, c.ns, opts), &v1alpha1.ManagedServiceAccountList{})
+		Invokes(testing.NewListAction(managedserviceaccountsResource, managedserviceaccountsKind, c.ns, opts), &v1beta1.ManagedServiceAccountList{})
 
 	if obj == nil {
 		return nil, err
@@ -62,8 +62,8 @@ func (c *FakeManagedServiceAccounts) List(ctx context.Context, opts v1.ListOptio
 	if label == nil {
 		label = labels.Everything()
 	}
-	list := &v1alpha1.ManagedServiceAccountList{ListMeta: obj.(*v1alpha1.ManagedServiceAccountList).ListMeta}
-	for _, item := range obj.(*v1alpha1.ManagedServiceAccountList).Items {
+	list := &v1beta1.ManagedServiceAccountList{ListMeta: obj.(*v1beta1.ManagedServiceAccountList).ListMeta}
+	for _, item := range obj.(*v1beta1.ManagedServiceAccountList).Items {
 		if label.Matches(labels.Set(item.Labels)) {
 			list.Items = append(list.Items, item)
 		}
@@ -79,43 +79,43 @@ func (c *FakeManagedServiceAccounts) Watch(ctx context.Context, opts v1.ListOpti
 }
 
 // Create takes the representation of a managedServiceAccount and creates it.  Returns the server's representation of the managedServiceAccount, and an error, if there is any.
-func (c *FakeManagedServiceAccounts) Create(ctx context.Context, managedServiceAccount *v1alpha1.ManagedServiceAccount, opts v1.CreateOptions) (result *v1alpha1.ManagedServiceAccount, err error) {
+func (c *FakeManagedServiceAccounts) Create(ctx context.Context, managedServiceAccount *v1beta1.ManagedServiceAccount, opts v1.CreateOptions) (result *v1beta1.ManagedServiceAccount, err error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewCreateAction(managedserviceaccountsResource, c.ns, managedServiceAccount), &v1alpha1.ManagedServiceAccount{})
+		Invokes(testing.NewCreateAction(managedserviceaccountsResource, c.ns, managedServiceAccount), &v1beta1.ManagedServiceAccount{})
 
 	if obj == nil {
 		return nil, err
 	}
-	return obj.(*v1alpha1.ManagedServiceAccount), err
+	return obj.(*v1beta1.ManagedServiceAccount), err
 }
 
 // Update takes the representation of a managedServiceAccount and updates it. Returns the server's representation of the managedServiceAccount, and an error, if there is any.
-func (c *FakeManagedServiceAccounts) Update(ctx context.Context, managedServiceAccount *v1alpha1.ManagedServiceAccount, opts v1.UpdateOptions) (result *v1alpha1.ManagedServiceAccount, err error) {
+func (c *FakeManagedServiceAccounts) Update(ctx context.Context, managedServiceAccount *v1beta1.ManagedServiceAccount, opts v1.UpdateOptions) (result *v1beta1.ManagedServiceAccount, err error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewUpdateAction(managedserviceaccountsResource, c.ns, managedServiceAccount), &v1alpha1.ManagedServiceAccount{})
+		Invokes(testing.NewUpdateAction(managedserviceaccountsResource, c.ns, managedServiceAccount), &v1beta1.ManagedServiceAccount{})
 
 	if obj == nil {
 		return nil, err
 	}
-	return obj.(*v1alpha1.ManagedServiceAccount), err
+	return obj.(*v1beta1.ManagedServiceAccount), err
 }
 
 // UpdateStatus was generated because the type contains a Status member.
 // Add a +genclient:noStatus comment above the type to avoid generating UpdateStatus().
-func (c *FakeManagedServiceAccounts) UpdateStatus(ctx context.Context, managedServiceAccount *v1alpha1.ManagedServiceAccount, opts v1.UpdateOptions) (*v1alpha1.ManagedServiceAccount, error) {
+func (c *FakeManagedServiceAccounts) UpdateStatus(ctx context.Context, managedServiceAccount *v1beta1.ManagedServiceAccount, opts v1.UpdateOptions) (*v1beta1.ManagedServiceAccount, error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewUpdateSubresourceAction(managedserviceaccountsResource, "status", c.ns, managedServiceAccount), &v1alpha1.ManagedServiceAccount{})
+		Invokes(testing.NewUpdateSubresourceAction(managedserviceaccountsResource, "status", c.ns, managedServiceAccount), &v1beta1.ManagedServiceAccount{})
 
 	if obj == nil {
 		return nil, err
 	}
-	return obj.(*v1alpha1.ManagedServiceAccount), err
+	return obj.(*v1beta1.ManagedServiceAccount), err
 }
 
 // Delete takes name of the managedServiceAccount and deletes it. Returns an error if one occurs.
 func (c *FakeManagedServiceAccounts) Delete(ctx context.Context, name string, opts v1.DeleteOptions) error {
 	_, err := c.Fake.
-		Invokes(testing.NewDeleteActionWithOptions(managedserviceaccountsResource, c.ns, name, opts), &v1alpha1.ManagedServiceAccount{})
+		Invokes(testing.NewDeleteActionWithOptions(managedserviceaccountsResource, c.ns, name, opts), &v1beta1.ManagedServiceAccount{})
 
 	return err
 }
@@ -124,17 +124,17 @@ func (c *FakeManagedServiceAccounts) Delete(ctx context.Context, name string, op
 func (c *FakeManagedServiceAccounts) DeleteCollection(ctx context.Context, opts v1.DeleteOptions, listOpts v1.ListOptions) error {
 	action := testing.NewDeleteCollectionAction(managedserviceaccountsResource, c.ns, listOpts)
 
-	_, err := c.Fake.Invokes(action, &v1alpha1.ManagedServiceAccountList{})
+	_, err := c.Fake.Invokes(action, &v1beta1.ManagedServiceAccountList{})
 	return err
 }
 
 // Patch applies the patch and returns the patched managedServiceAccount.
-func (c *FakeManagedServiceAccounts) Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts v1.PatchOptions, subresources ...string) (result *v1alpha1.ManagedServiceAccount, err error) {
+func (c *FakeManagedServiceAccounts) Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts v1.PatchOptions, subresources ...string) (result *v1beta1.ManagedServiceAccount, err error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewPatchSubresourceAction(managedserviceaccountsResource, c.ns, name, pt, data, subresources...), &v1alpha1.ManagedServiceAccount{})
+		Invokes(testing.NewPatchSubresourceAction(managedserviceaccountsResource, c.ns, name, pt, data, subresources...), &v1beta1.ManagedServiceAccount{})
 
 	if obj == nil {
 		return nil, err
 	}
-	return obj.(*v1alpha1.ManagedServiceAccount), err
+	return obj.(*v1beta1.ManagedServiceAccount), err
 }

@@ -15,7 +15,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	authv1beta1 "open-cluster-management.io/managed-serviceaccount/api/v1beta1"
+	authv1beta1 "open-cluster-management.io/managed-serviceaccount/apis/authentication/v1beta1"
 )
 
 func NewEphemeralIdentityReconciler(cache cache.Cache, hubClient client.Client) *EphemeralIdentityReconciler {

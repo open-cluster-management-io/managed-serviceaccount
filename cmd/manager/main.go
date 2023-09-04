@@ -42,7 +42,7 @@ import (
 	"open-cluster-management.io/addon-framework/pkg/agent"
 	"open-cluster-management.io/addon-framework/pkg/utils"
 	addonclient "open-cluster-management.io/api/client/addon/clientset/versioned"
-	authv1beta1 "open-cluster-management.io/managed-serviceaccount/api/v1beta1"
+	authv1beta1 "open-cluster-management.io/managed-serviceaccount/apis/authentication/v1beta1"
 	"open-cluster-management.io/managed-serviceaccount/pkg/addon/commoncontroller"
 	"open-cluster-management.io/managed-serviceaccount/pkg/addon/manager"
 	"open-cluster-management.io/managed-serviceaccount/pkg/common"

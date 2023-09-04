@@ -5,6 +5,7 @@
 domain: open-cluster-management.io
 layout:
 - go.kubebuilder.io/v3
+multigroup: true
 projectName: managed-serviceaccount
 repo: open-cluster-management.io/managed-serviceaccount
 resources:
@@ -15,7 +16,7 @@ resources:
   domain: open-cluster-management.io
   group: authentication
   kind: ManagedServiceAccount
-  path: open-cluster-management.io/managed-serviceaccount/api/v1alpha1
+  path: open-cluster-management.io/managed-serviceaccount/apis/authentication/v1alpha1
   version: v1alpha1
 - api:
     crdVersion: v1
@@ -23,6 +24,6 @@ resources:
   domain: open-cluster-management.io
   group: authentication
   kind: ManagedServiceAccount
-  path: open-cluster-management.io/managed-serviceaccount/api/v1beta1
+  path: open-cluster-management.io/managed-serviceaccount/apis/authentication/v1beta1
   version: v1beta1
 version: "3"

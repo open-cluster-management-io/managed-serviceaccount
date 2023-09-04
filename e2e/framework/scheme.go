@@ -6,8 +6,8 @@ import (
 	k8sscheme "k8s.io/client-go/kubernetes/scheme"
 	addonv1alpha1 "open-cluster-management.io/api/addon/v1alpha1"
 	clusterv1 "open-cluster-management.io/api/cluster/v1"
-	authv1alpha1 "open-cluster-management.io/managed-serviceaccount/api/v1alpha1"
-	authv1beta1 "open-cluster-management.io/managed-serviceaccount/api/v1beta1"
+	authv1alpha1 "open-cluster-management.io/managed-serviceaccount/apis/authentication/v1alpha1"
+	authv1beta1 "open-cluster-management.io/managed-serviceaccount/apis/authentication/v1beta1"
 )
 
 var scheme = runtime.NewScheme()
