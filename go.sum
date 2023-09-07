@@ -333,8 +333,8 @@ k8s.io/utils v0.0.0-20230209194617-a36077c30491 h1:r0BAOLElQnnFhE/ApUsg3iHdVYYPB
 k8s.io/utils v0.0.0-20230209194617-a36077c30491/go.mod h1:OLgZIPagt7ERELqWJFomSt595RzquPNLL48iOWgYOg0=
 open-cluster-management.io/addon-framework v0.7.1-0.20230803002113-eea76f8f5ad7 h1:GozqvUtekO4Zg90wLih3CA/ZYKLJlGKX+vL990U8DoQ=
 open-cluster-management.io/addon-framework v0.7.1-0.20230803002113-eea76f8f5ad7/go.mod h1:gLGpXkdwAzzV+JB5eQPNHbZFJwp7HsKSSwgqOxGNVCw=
-open-cluster-management.io/api v0.11.1-0.20230727093131-915f5826cff9 h1:P5yjl8w09JYsTE1D6JV6y1vY9X2bBN8m494ZYg9HoyY=
-open-cluster-management.io/api v0.11.1-0.20230727093131-915f5826cff9/go.mod h1:WgKUCJ7+Bf40DsOmH1Gdkpyj3joco+QLzrlM6Ak39zE=
+open-cluster-management.io/api v0.11.1-0.20230905055724-cf1ead467a83 h1:3zbT3sT/tEAQbpjIk6uRiTQGknQ3kQlfd11ElVuXyyQ=
+open-cluster-management.io/api v0.11.1-0.20230905055724-cf1ead467a83/go.mod h1:nsQ/G5JpfjQUg7dHpblyywWC6BRqklNaF6fIswVCHyY=
 sigs.k8s.io/controller-runtime v0.15.1 h1:9UvgKD4ZJGcj24vefUFgZFP3xej/3igL9BsOUTb/+4c=
 sigs.k8s.io/controller-runtime v0.15.1/go.mod h1:7ngYvp1MLT+9GeZ+6lH3LOlcHkp/+tzA/fmHa4iq9kk=
 sigs.k8s.io/json v0.0.0-20221116044647-bc3834ca7abd h1:EDPBXCAspyGV4jQlpZSudPeMmr1bNJefnuqLsRAsHZo=
