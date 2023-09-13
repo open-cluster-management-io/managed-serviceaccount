@@ -97,7 +97,7 @@ jobs:
              --set featureGates.ephemeralIdentity=true \
              --set enableAddOnDeploymentConfig=true
       - name: Run e2e test
-        run: make test-e2e
+        run: make test-e2e GENKGO_ARGS='--ginkgo.label-filter='\''!template-install'\'''
 
   e2e-addon-template:
     name: e2e-addon-template
