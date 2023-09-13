@@ -53,7 +53,7 @@ var _ = Describe("Token Test for Managed Service Account v1beta1",
 				Expect(err).NotTo(HaveOccurred())
 				sa := &corev1.ServiceAccount{}
 				err = f.HubRuntimeClient().Get(context.TODO(), types.NamespacedName{
-					Namespace: addon.Spec.InstallNamespace,
+					Namespace: addon.Status.Namespace,
 					Name:      msa.Name,
 				}, sa)
 				if apierrors.IsNotFound(err) {
@@ -151,7 +151,7 @@ var _ = Describe("Token Test for Managed Service Account v1beta1",
 
 			serviceAccount := &corev1.ServiceAccount{}
 			err = f.HubRuntimeClient().Get(context.TODO(), types.NamespacedName{
-				Namespace: addon.Spec.InstallNamespace,
+				Namespace: addon.Status.Namespace,
 				Name:      targetName,
 			}, serviceAccount)
 			Expect(err).NotTo(HaveOccurred())
@@ -197,11 +197,11 @@ var _ = Describe("Token Test for Managed Service Account v1beta1",
 			Eventually(func() error {
 				serviceAccount := &corev1.ServiceAccount{}
 				err = f.HubRuntimeClient().Get(context.TODO(), types.NamespacedName{
-					Namespace: addon.Spec.InstallNamespace,
+					Namespace: addon.Status.Namespace,
 					Name:      targetName,
 				}, serviceAccount)
 				if err == nil {
-					return fmt.Errorf("serviceaccount %s/%s still exists", addon.Spec.InstallNamespace, targetName)
+					return fmt.Errorf("serviceaccount %s/%s still exists", addon.Status.Namespace, targetName)
 				}
 				if apierrors.IsNotFound(err) {
 					return nil
@@ -230,7 +230,7 @@ func validateToken(f framework.Framework, targetName string) {
 
 	expectedUserName := fmt.Sprintf(
 		"system:serviceaccount:%s:%s",
-		addon.Spec.InstallNamespace,
+		addon.Status.Namespace,
 		latest.Name,
 	)
 

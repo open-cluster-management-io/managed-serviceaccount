@@ -16,10 +16,9 @@ spec:
     resource: addondeploymentconfigs
 {{- end }}
 {{- if eq .Values.hubDeployMode "AddOnTemplate" }}
-# TODO: uncomment when the agentInstallNamespace field is added to the ocm repo
-    # defaultConfig:
-    #   namespace: {{ .Release.Namespace }}
-    #   name: managed-serviceaccount-addon-deploy-config
+    defaultConfig:
+      namespace: {{ .Release.Namespace }}
+      name: managed-serviceaccount-addon-deploy-config
   - group: addon.open-cluster-management.io
     resource: addontemplates
     defaultConfig:

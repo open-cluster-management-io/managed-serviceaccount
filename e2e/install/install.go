@@ -184,7 +184,7 @@ var _ = Describe("Addon Installation Test", Label("install"),
 				Name:      common.AddonName,
 			}, addon)
 			Expect(err).NotTo(HaveOccurred())
-			addonInstallNamespace := addon.Spec.InstallNamespace
+			addonInstallNamespace := addon.Status.Namespace
 
 			By("Prepare cluster annotation for addon image override config")
 			overrideRegistries := addonv1alpha1.AddOnDeploymentConfigSpec{

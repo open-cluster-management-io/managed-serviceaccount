@@ -5,6 +5,8 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/klog/v2/klogr"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -66,6 +68,8 @@ func (f *framework) TestClusterName() string {
 }
 
 func (f *framework) BeforeEach() {
+	logger := klogr.New()
+	ctrl.SetLogger(logger)
 }
 
 func (f *framework) AfterEach() {

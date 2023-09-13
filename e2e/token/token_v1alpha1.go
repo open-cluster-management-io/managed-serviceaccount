@@ -52,7 +52,7 @@ var _ = Describe("Token Test",
 				Expect(err).NotTo(HaveOccurred())
 				sa := &corev1.ServiceAccount{}
 				err = f.HubRuntimeClient().Get(context.TODO(), types.NamespacedName{
-					Namespace: addon.Spec.InstallNamespace,
+					Namespace: addon.Status.Namespace,
 					Name:      msa.Name,
 				}, sa)
 				if apierrors.IsNotFound(err) {
@@ -150,7 +150,7 @@ var _ = Describe("Token Test",
 
 			serviceAccount := &corev1.ServiceAccount{}
 			err = f.HubRuntimeClient().Get(context.TODO(), types.NamespacedName{
-				Namespace: addon.Spec.InstallNamespace,
+				Namespace: addon.Status.Namespace,
 				Name:      targetName,
 			}, serviceAccount)
 			Expect(err).NotTo(HaveOccurred())
@@ -190,7 +190,7 @@ var _ = Describe("Token Test",
 			Eventually(func() bool {
 				serviceAccount := &corev1.ServiceAccount{}
 				err = f.HubRuntimeClient().Get(context.TODO(), types.NamespacedName{
-					Namespace: addon.Spec.InstallNamespace,
+					Namespace: addon.Status.Namespace,
 					Name:      targetName,
 				}, serviceAccount)
 				if errors.IsNotFound(err) {
