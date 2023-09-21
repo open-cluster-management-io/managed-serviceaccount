@@ -8,6 +8,14 @@ spec:
   agentSpec:
     workload:
       manifests:
+      # Orphan the agent namespace to handle the upgrade case
+      # TODO: remove this in the next release
+      - apiVersion: v1
+        kind: Namespace
+        metadata:
+          annotations:
+            addon.open-cluster-management.io/deletion-orphan: ""
+          name: '{{ `{{INSTALL_NAMESPACE}}` }}'
       - apiVersion: rbac.authorization.k8s.io/v1
         kind: ClusterRole
         metadata:
