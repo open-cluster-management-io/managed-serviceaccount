@@ -94,6 +94,41 @@ func TestReconcile(t *testing.T) {
 					"create", // create tokenreview
 				)
 				assertToken(t, hubClient, clusterName, msaName, token1, ca1)
+				assertMSAConditions(t, hubClient, clusterName, msaName, []metav1.Condition{
+					{
+						Type:   authv1beta1.ConditionTypeTokenReported,
+						Status: metav1.ConditionTrue,
+					},
+					{
+						Type:   authv1beta1.ConditionTypeSecretCreated,
+						Status: metav1.ConditionTrue,
+					},
+				})
+			},
+		},
+		{
+			name:   "add secret created condition even secret exists",
+			sa:     newServiceAccount(clusterName, msaName),
+			secret: newSecret(clusterName, msaName, token1, ca1),
+			msa: newManagedServiceAccount(clusterName, msaName).
+				withRotationValidity(500 * time.Second).
+				build(),
+			newToken: token1,
+			validateFunc: func(t *testing.T, hubClient client.Client, actions []clienttesting.Action) {
+				assertActions(t, actions, "create", // create serviceaccount
+					"create", // create tokenreview
+				)
+				assertToken(t, hubClient, clusterName, msaName, token1, ca1)
+				assertMSAConditions(t, hubClient, clusterName, msaName, []metav1.Condition{
+					{
+						Type:   authv1beta1.ConditionTypeTokenReported,
+						Status: metav1.ConditionTrue,
+					},
+					{
+						Type:   authv1beta1.ConditionTypeSecretCreated,
+						Status: metav1.ConditionTrue,
+					},
+				})
 			},
 		},
 		{

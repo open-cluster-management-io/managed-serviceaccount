@@ -8,6 +8,7 @@ import (
 	authv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
@@ -82,62 +83,34 @@ func (r *TokenReconciler) Reconcile(ctx context.Context, request reconcile.Reque
 		return reconcile.Result{}, errors.Wrapf(err, "failed to ensure service account")
 	}
 
-	secretExists := true
-	currentTokenSecret := &corev1.Secret{}
-	if err := r.HubClient.Get(context.TODO(), types.NamespacedName{
-		Namespace: managed.Namespace,
-		Name:      managed.Name,
-	}, currentTokenSecret); err != nil {
-		if !apierrors.IsNotFound(err) {
-			return reconcile.Result{}, errors.Wrapf(err, "failed to read current token secret from hub cluster")
-		}
-		secretExists = false
-		currentTokenSecret = nil
-	}
-
-	if shouldCreate, err := r.isSoonExpiring(managed, currentTokenSecret); err != nil {
-		return reconcile.Result{}, errors.Wrapf(err, "failed to make a decision on token creation")
-	} else if secretExists && !shouldCreate {
-		logger.Info("Skipped creating token")
-		return reconcile.Result{}, nil
-	}
-
-	token, expiring, err := r.createToken(managed)
+	expiring, err := r.sync(ctx, managed)
 	if err != nil {
-		return reconcile.Result{}, errors.Wrapf(err, "failed to request token for service-account")
+		return reconcile.Result{}, errors.Wrapf(err, "failed to sync token")
 	}
 
-	caData := r.SpokeClientConfig.CAData
-	if len(caData) == 0 {
-		var err error
-		caData, err = os.ReadFile(r.SpokeClientConfig.CAFile)
-		if err != nil {
-			return reconcile.Result{}, errors.Wrapf(err, "failed to read CA data from file")
-		}
-	}
+	var conditions []metav1.Condition
+	now := metav1.Now()
+	tokenRefreshTime := now
 
-	tokenSecret := buildSecret(managed, caData, []byte(token))
-	if secretExists {
-		currentTokenSecret.Data = tokenSecret.Data
-		if err := r.HubClient.Update(context.TODO(), currentTokenSecret); err != nil {
-			return reconcile.Result{}, errors.Wrapf(err, "failed to update the token secret")
+	if expiring == nil {
+		logger.Info("Skipped creating token")
+		// token is not refreshed, keep the previous expiration timestamp
+		expiring = managed.Status.ExpirationTimestamp
+		if managed.Status.TokenSecretRef != nil {
+			tokenRefreshTime = managed.Status.TokenSecretRef.LastRefreshTimestamp
 		}
 	} else {
-		if err := r.HubClient.Create(context.TODO(), tokenSecret); err != nil {
-			return reconcile.Result{}, errors.Wrapf(err, "failed to create the token secret")
-		}
-	}
-
-	now := metav1.Now()
-	conditions := []metav1.Condition{
-		{
+		// token is refreshed, update the token reported condition last transition time
+		conditions = append(conditions, metav1.Condition{
 			Type:               authv1beta1.ConditionTypeTokenReported,
 			Status:             metav1.ConditionTrue,
 			Reason:             "TokenReported",
 			LastTransitionTime: now,
-		},
+		})
 	}
-	if !secretExists {
+
+	// after sync func succeeds, the secret must exist, add the conditions if not exist
+	if meta.FindStatusCondition(managed.Status.Conditions, authv1beta1.ConditionTypeSecretCreated) == nil {
 		conditions = append(conditions, metav1.Condition{
 			Type:               authv1beta1.ConditionTypeSecretCreated,
 			Status:             metav1.ConditionTrue,
@@ -145,12 +118,22 @@ func (r *TokenReconciler) Reconcile(ctx context.Context, request reconcile.Reque
 			LastTransitionTime: now,
 		})
 	}
+	if meta.FindStatusCondition(managed.Status.Conditions, authv1beta1.ConditionTypeTokenReported) == nil &&
+		meta.FindStatusCondition(conditions, authv1beta1.ConditionTypeTokenReported) == nil { // prevent duplicates
+		conditions = append(conditions, metav1.Condition{
+			Type:               authv1beta1.ConditionTypeTokenReported,
+			Status:             metav1.ConditionTrue,
+			Reason:             "TokenReported",
+			LastTransitionTime: now,
+		})
+	}
+
 	status := authv1beta1.ManagedServiceAccountStatus{
 		Conditions:          mergeConditions(managed.Status.Conditions, conditions),
-		ExpirationTimestamp: &expiring,
+		ExpirationTimestamp: expiring,
 		TokenSecretRef: &authv1beta1.SecretRef{
 			Name:                 managed.Name,
-			LastRefreshTimestamp: now,
+			LastRefreshTimestamp: tokenRefreshTime,
 		},
 	}
 
@@ -162,6 +145,57 @@ func (r *TokenReconciler) Reconcile(ctx context.Context, request reconcile.Reque
 
 	logger.Info("Refreshed token")
 	return reconcile.Result{}, nil
+}
+
+// sync is the main logic of token rotation, it returns the expiration time of the token if the token is created/updated
+func (r *TokenReconciler) sync(ctx context.Context,
+	managed *authv1beta1.ManagedServiceAccount) (*metav1.Time, error) {
+	secretExists := true
+	currentTokenSecret := &corev1.Secret{}
+	if err := r.HubClient.Get(ctx, types.NamespacedName{
+		Namespace: managed.Namespace,
+		Name:      managed.Name,
+	}, currentTokenSecret); err != nil {
+		if !apierrors.IsNotFound(err) {
+			return nil, errors.Wrapf(err, "failed to read current token secret from hub cluster")
+		}
+		secretExists = false
+		currentTokenSecret = nil
+	}
+
+	if shouldCreate, err := r.isSoonExpiring(managed, currentTokenSecret); err != nil {
+		return nil, errors.Wrapf(err, "failed to make a decision on token creation")
+	} else if secretExists && !shouldCreate {
+		return nil, nil
+	}
+
+	token, expiring, err := r.createToken(managed)
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to request token for service-account")
+	}
+
+	caData := r.SpokeClientConfig.CAData
+	if len(caData) == 0 {
+		var err error
+		caData, err = os.ReadFile(r.SpokeClientConfig.CAFile)
+		if err != nil {
+			return nil, errors.Wrapf(err, "failed to read CA data from file")
+		}
+	}
+
+	tokenSecret := buildSecret(managed, caData, []byte(token))
+	if secretExists {
+		currentTokenSecret.Data = tokenSecret.Data
+		if err := r.HubClient.Update(ctx, currentTokenSecret); err != nil {
+			return nil, errors.Wrapf(err, "failed to update the token secret")
+		}
+	} else {
+		if err := r.HubClient.Create(ctx, tokenSecret); err != nil {
+			return nil, errors.Wrapf(err, "failed to create the token secret")
+		}
+	}
+
+	return &expiring, nil
 }
 
 func (r *TokenReconciler) ensureServiceAccount(managed *authv1beta1.ManagedServiceAccount) error {
