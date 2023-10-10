@@ -45,7 +45,7 @@ spec:
           name: managed-serviceaccount-addon-agent
           namespace: open-cluster-management-agent-addon
         spec:
-          replicas: 1
+          replicas: {{ .Values.replicas | default 1 }}
           selector:
             matchLabels:
               addon-agent: managed-serviceaccount
@@ -56,7 +56,9 @@ spec:
             spec:
               containers:
               - args:
+                {{- if gt (int .Values.replicas) 1 }}
                 - --leader-elect=true
+                {{- end }}
                 - --cluster-name={{ `{{CLUSTER_NAME}}` }}          # escape double curly brackets, option 1
                 - --kubeconfig={{ "{{" }}HUB_KUBECONFIG{{ "}}" }}  # escape double curly brackets, option 2
                 - --feature-gates=EphemeralIdentity=true

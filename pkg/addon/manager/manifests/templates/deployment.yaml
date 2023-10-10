@@ -39,7 +39,7 @@ spec:
           command:
             - /agent
           args:
-            - --leader-elect=true
+            - --leader-elect=false
             - --cluster-name={{ .ClusterName }}
             - --kubeconfig=/etc/hub/kubeconfig
           volumeMounts:
