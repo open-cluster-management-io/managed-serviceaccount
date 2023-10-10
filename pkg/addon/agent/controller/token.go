@@ -59,9 +59,9 @@ func (r *TokenReconciler) SetupWithManager(mgr ctrl.Manager) error {
 func (r *TokenReconciler) Reconcile(ctx context.Context, request reconcile.Request) (reconcile.Result, error) {
 	logger := log.FromContext(ctx)
 	logger.Info("Start reconciling")
-	managed := &authv1beta1.ManagedServiceAccount{}
+	msa := &authv1beta1.ManagedServiceAccount{}
 
-	if err := r.Cache.Get(ctx, request.NamespacedName, managed); err != nil {
+	if err := r.Cache.Get(ctx, request.NamespacedName, msa); err != nil {
 		if !apierrors.IsNotFound(err) {
 			//fail to get managed-serviceaccount, requeue
 			return reconcile.Result{}, errors.Wrapf(err, "fail to get managed serviceaccount")
@@ -79,67 +79,50 @@ func (r *TokenReconciler) Reconcile(ctx context.Context, request reconcile.Reque
 		return reconcile.Result{}, nil
 	}
 
-	if err := r.ensureServiceAccount(managed); err != nil {
+	if err := r.ensureServiceAccount(msa); err != nil {
 		return reconcile.Result{}, errors.Wrapf(err, "failed to ensure service account")
 	}
 
-	expiring, err := r.sync(ctx, managed)
+	expiring, err := r.sync(ctx, msa)
 	if err != nil {
 		return reconcile.Result{}, errors.Wrapf(err, "failed to sync token")
 	}
 
-	var conditions []metav1.Condition
 	now := metav1.Now()
 	tokenRefreshTime := now
 
 	if expiring == nil {
 		logger.Info("Skipped creating token")
 		// token is not refreshed, keep the previous expiration timestamp
-		expiring = managed.Status.ExpirationTimestamp
-		if managed.Status.TokenSecretRef != nil {
-			tokenRefreshTime = managed.Status.TokenSecretRef.LastRefreshTimestamp
+		expiring = msa.Status.ExpirationTimestamp
+		if msa.Status.TokenSecretRef != nil {
+			tokenRefreshTime = msa.Status.TokenSecretRef.LastRefreshTimestamp
 		}
-	} else {
-		// token is refreshed, update the token reported condition last transition time
-		conditions = append(conditions, metav1.Condition{
-			Type:               authv1beta1.ConditionTypeTokenReported,
-			Status:             metav1.ConditionTrue,
-			Reason:             "TokenReported",
-			LastTransitionTime: now,
-		})
 	}
 
+	msaCopy := msa.DeepCopy()
 	// after sync func succeeds, the secret must exist, add the conditions if not exist
-	if meta.FindStatusCondition(managed.Status.Conditions, authv1beta1.ConditionTypeSecretCreated) == nil {
-		conditions = append(conditions, metav1.Condition{
-			Type:               authv1beta1.ConditionTypeSecretCreated,
-			Status:             metav1.ConditionTrue,
-			Reason:             "SecretCreated",
-			LastTransitionTime: now,
-		})
-	}
-	if meta.FindStatusCondition(managed.Status.Conditions, authv1beta1.ConditionTypeTokenReported) == nil &&
-		meta.FindStatusCondition(conditions, authv1beta1.ConditionTypeTokenReported) == nil { // prevent duplicates
-		conditions = append(conditions, metav1.Condition{
-			Type:               authv1beta1.ConditionTypeTokenReported,
-			Status:             metav1.ConditionTrue,
-			Reason:             "TokenReported",
-			LastTransitionTime: now,
-		})
+	meta.SetStatusCondition(&msaCopy.Status.Conditions, metav1.Condition{
+		Type:               authv1beta1.ConditionTypeSecretCreated,
+		Status:             metav1.ConditionTrue,
+		Reason:             "SecretCreated",
+		LastTransitionTime: now,
+	})
+
+	meta.SetStatusCondition(&msaCopy.Status.Conditions, metav1.Condition{
+		Type:               authv1beta1.ConditionTypeTokenReported,
+		Status:             metav1.ConditionTrue,
+		Reason:             "TokenReported",
+		LastTransitionTime: now,
+	})
+
+	msaCopy.Status.ExpirationTimestamp = expiring
+	msaCopy.Status.TokenSecretRef = &authv1beta1.SecretRef{
+		Name:                 msa.Name,
+		LastRefreshTimestamp: tokenRefreshTime,
 	}
 
-	status := authv1beta1.ManagedServiceAccountStatus{
-		Conditions:          mergeConditions(managed.Status.Conditions, conditions),
-		ExpirationTimestamp: expiring,
-		TokenSecretRef: &authv1beta1.SecretRef{
-			Name:                 managed.Name,
-			LastRefreshTimestamp: tokenRefreshTime,
-		},
-	}
-
-	munged := managed.DeepCopy()
-	munged.Status = status
-	if err := r.HubClient.Status().Update(context.TODO(), munged); err != nil {
+	if err := r.HubClient.Status().Update(context.TODO(), msaCopy); err != nil {
 		return reconcile.Result{}, errors.Wrapf(err, "failed to update status")
 	}
 
@@ -285,24 +268,4 @@ func (r *TokenReconciler) isSoonExpiring(managed *authv1beta1.ManagedServiceAcco
 	}
 
 	return !tr.Status.Authenticated, nil
-}
-
-func mergeConditions(old, new []metav1.Condition) []metav1.Condition {
-	for _, cnew := range new {
-		cnew := cnew
-		found := false
-		idx := 0
-		for i, cold := range old {
-			if cold.Type == cnew.Type {
-				found = true
-				idx = i
-			}
-		}
-		if found {
-			old[idx] = cnew
-		} else {
-			old = append(old, cnew)
-		}
-	}
-	return old
 }
