@@ -52,7 +52,7 @@ spec:
                       args:
                         - --leader-elect=true
                         - --cluster-name={{CLUSTER_NAME}}
-                        - --kubeconfig={{HUB_KUBECONFIG}}
+                        - --hub-kubeconfig={{HUB_KUBECONFIG}}
                         - --feature-gates=EphemeralIdentity=true
                       livenessProbe:
                         httpGet:

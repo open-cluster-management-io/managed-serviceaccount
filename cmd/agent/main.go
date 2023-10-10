@@ -15,7 +15,6 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/kubernetes"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
-	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	cliflag "k8s.io/component-base/cli/flag"
 	"k8s.io/klog/v2"
@@ -50,7 +49,7 @@ func main() {
 	var enableLeaderElection bool
 	var probeAddr string
 	var clusterName string
-	var spokeKubeconfig string
+	var hubKubeconfig, spokeKubeconfig string
 	var featureGatesFlags map[string]bool
 
 	logger := klogr.New()
@@ -62,6 +61,7 @@ func main() {
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
 	flag.StringVar(&clusterName, "cluster-name", "", "The name of the managed cluster.")
+	flag.StringVar(&hubKubeconfig, "hub-kubeconfig", "", "The kubeconfig to talk to the hub cluster.")
 	flag.StringVar(&spokeKubeconfig, "spoke-kubeconfig", "", "The kubeconfig to talk to the managed cluster, "+
 		"will use the in-cluster client if not specified.")
 	flag.Var(
@@ -82,17 +82,13 @@ func main() {
 		klog.Fatal("missing --cluster-name")
 	}
 
-	var spokeCfg *rest.Config
-	if len(spokeKubeconfig) > 0 {
-		spokeCfg, err = clientcmd.BuildConfigFromFlags("", spokeKubeconfig)
-		if err != nil {
-			klog.Fatal("failed to build a spoke cluster client config from --spoke-kubeconfig")
-		}
-	} else {
-		spokeCfg, err = rest.InClusterConfig()
-		if err != nil {
-			klog.Fatal("failed build a in-cluster spoke cluster client config")
-		}
+	if len(hubKubeconfig) == 0 {
+		klog.Fatal("missing --hub-kubeconfig")
+	}
+
+	hubCfg, err := clientcmd.BuildConfigFromFlags("", hubKubeconfig)
+	if err != nil {
+		klog.Fatal("failed to build a spoke cluster client config from --hub-kubeconfig")
 	}
 
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
@@ -104,13 +100,20 @@ func main() {
 		HealthProbeBindAddress: probeAddr,
 		LeaderElection:         enableLeaderElection,
 		LeaderElectionID:       "managed-serviceaccount-addon-agent",
-		LeaderElectionConfig:   spokeCfg,
 	})
 	if err != nil {
 		klog.Fatal("unable to start manager")
 	}
 
-	hubNativeClient, err := kubernetes.NewForConfig(mgr.GetConfig())
+	spokeCfg := mgr.GetConfig()
+	if len(spokeKubeconfig) > 0 {
+		spokeCfg, err = clientcmd.BuildConfigFromFlags("", spokeKubeconfig)
+		if err != nil {
+			klog.Fatal("failed to build a spoke cluster client config from --spoke-kubeconfig")
+		}
+	}
+
+	hubNativeClient, err := kubernetes.NewForConfig(hubCfg)
 	if err != nil {
 		klog.Fatal("unable to instantiate a kubernetes native client")
 	}
@@ -190,7 +193,7 @@ func main() {
 	ctx, cancel := context.WithCancel(ctrl.SetupSignalHandler())
 	defer cancel()
 
-	leaseUpdater, err := health.NewAddonHealthUpdater(mgr.GetConfig(), clusterName, spokeCfg, spokeNamespace)
+	leaseUpdater, err := health.NewAddonHealthUpdater(hubCfg, clusterName, spokeCfg, spokeNamespace)
 	if err != nil {
 		klog.Fatalf("unable to create healthiness lease updater for controller %v", "ManagedServiceAccount")
 	}

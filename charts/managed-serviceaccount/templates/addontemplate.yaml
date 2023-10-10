@@ -60,7 +60,7 @@ spec:
                 - --leader-elect=true
                 {{- end }}
                 - --cluster-name={{ `{{CLUSTER_NAME}}` }}          # escape double curly brackets, option 1
-                - --kubeconfig={{ "{{" }}HUB_KUBECONFIG{{ "}}" }}  # escape double curly brackets, option 2
+                - --hub-kubeconfig={{ "{{" }}HUB_KUBECONFIG{{ "}}" }}  # escape double curly brackets, option 2
                 - --feature-gates=EphemeralIdentity=true
                 command:
                 - /agent
