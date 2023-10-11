@@ -79,12 +79,22 @@ func (r *TokenReconciler) Reconcile(ctx context.Context, request reconcile.Reque
 		return reconcile.Result{}, nil
 	}
 
-	if err := r.ensureServiceAccount(msa); err != nil {
+	msaCopy := msa.DeepCopy()
+	if err := r.ensureServiceAccount(msaCopy); err != nil {
 		return reconcile.Result{}, errors.Wrapf(err, "failed to ensure service account")
 	}
 
-	expiring, err := r.sync(ctx, msa)
+	expiring, err := r.sync(ctx, msaCopy)
 	if err != nil {
+		meta.SetStatusCondition(&msaCopy.Status.Conditions, metav1.Condition{
+			Type:    authv1beta1.ConditionTypeTokenReported,
+			Status:  metav1.ConditionFalse,
+			Reason:  "TokenReportFailed",
+			Message: err.Error(),
+		})
+		if errUpdate := r.HubClient.Status().Update(context.TODO(), msaCopy); errUpdate != nil {
+			return reconcile.Result{}, errors.Wrapf(errUpdate, "failed to update status")
+		}
 		return reconcile.Result{}, errors.Wrapf(err, "failed to sync token")
 	}
 
@@ -100,7 +110,6 @@ func (r *TokenReconciler) Reconcile(ctx context.Context, request reconcile.Reque
 		}
 	}
 
-	msaCopy := msa.DeepCopy()
 	// after sync func succeeds, the secret must exist, add the conditions if not exist
 	meta.SetStatusCondition(&msaCopy.Status.Conditions, metav1.Condition{
 		Type:               authv1beta1.ConditionTypeSecretCreated,

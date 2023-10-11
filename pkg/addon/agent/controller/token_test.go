@@ -38,6 +38,7 @@ func TestReconcile(t *testing.T) {
 		msa                    *authv1beta1.ManagedServiceAccount
 		sa                     *corev1.ServiceAccount
 		secret                 *corev1.Secret
+		spokeNamespace         string
 		getError               error
 		newToken               string
 		isExistingTokenInvalid bool
@@ -76,6 +77,25 @@ func TestReconcile(t *testing.T) {
 					{
 						Type:   authv1beta1.ConditionTypeSecretCreated,
 						Status: metav1.ConditionTrue,
+					},
+				})
+			},
+		},
+		{
+			name:           "create token failed",
+			sa:             newServiceAccount(clusterName, msaName),
+			msa:            newManagedServiceAccount(clusterName, msaName).build(),
+			newToken:       token1,
+			spokeNamespace: "fail",
+			expectedError:  "failed to sync token: failed to request token for service-account: failed to create token",
+			validateFunc: func(t *testing.T, hubClient client.Client, actions []clienttesting.Action) {
+				assertActions(t, actions, "create", // create serviceaccount
+					"create", // create tokenrequest
+				)
+				assertMSAConditions(t, hubClient, clusterName, msaName, []metav1.Condition{
+					{
+						Type:   authv1beta1.ConditionTypeTokenReported,
+						Status: metav1.ConditionFalse,
 					},
 				})
 			},
@@ -215,6 +235,9 @@ func TestReconcile(t *testing.T) {
 				"serviceaccounts",
 				func(action clienttesting.Action) (handled bool, ret runtime.Object, err error) {
 					if action.GetSubresource() == "token" {
+						if action.GetNamespace() == "fail" {
+							return true, nil, errors.New("failed to create token")
+						}
 						return true, &authv1.TokenRequest{
 							Status: authv1.TokenRequestStatus{
 								Token:               c.newToken,
@@ -264,6 +287,7 @@ func TestReconcile(t *testing.T) {
 						CAData: []byte(ca1),
 					},
 				},
+				SpokeNamespace: c.spokeNamespace,
 			}
 
 			_, err := reconciler.Reconcile(context.Background(), reconcile.Request{NamespacedName: types.NamespacedName{
@@ -271,13 +295,13 @@ func TestReconcile(t *testing.T) {
 				Namespace: clusterName,
 			}})
 
-			if err == nil {
-				if c.validateFunc != nil {
-					c.validateFunc(t, hubClient, fakeKubeClient.Actions())
-				}
-				return
+			if len(c.expectedError) != 0 {
+				assert.EqualError(t, err, c.expectedError)
 			}
-			assert.EqualError(t, err, c.expectedError)
+			if c.validateFunc != nil {
+				c.validateFunc(t, hubClient, fakeKubeClient.Actions())
+			}
+
 		})
 	}
 }
