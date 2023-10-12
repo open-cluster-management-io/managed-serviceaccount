@@ -8,6 +8,7 @@ import (
 	authv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
@@ -58,9 +59,9 @@ func (r *TokenReconciler) SetupWithManager(mgr ctrl.Manager) error {
 func (r *TokenReconciler) Reconcile(ctx context.Context, request reconcile.Request) (reconcile.Result, error) {
 	logger := log.FromContext(ctx)
 	logger.Info("Start reconciling")
-	managed := &authv1beta1.ManagedServiceAccount{}
+	msa := &authv1beta1.ManagedServiceAccount{}
 
-	if err := r.Cache.Get(ctx, request.NamespacedName, managed); err != nil {
+	if err := r.Cache.Get(ctx, request.NamespacedName, msa); err != nil {
 		if !apierrors.IsNotFound(err) {
 			//fail to get managed-serviceaccount, requeue
 			return reconcile.Result{}, errors.Wrapf(err, "fail to get managed serviceaccount")
@@ -78,33 +79,91 @@ func (r *TokenReconciler) Reconcile(ctx context.Context, request reconcile.Reque
 		return reconcile.Result{}, nil
 	}
 
-	if err := r.ensureServiceAccount(managed); err != nil {
+	msaCopy := msa.DeepCopy()
+	if err := r.ensureServiceAccount(msaCopy); err != nil {
 		return reconcile.Result{}, errors.Wrapf(err, "failed to ensure service account")
 	}
 
+	expiring, err := r.sync(ctx, msaCopy)
+	if err != nil {
+		meta.SetStatusCondition(&msaCopy.Status.Conditions, metav1.Condition{
+			Type:    authv1beta1.ConditionTypeTokenReported,
+			Status:  metav1.ConditionFalse,
+			Reason:  "TokenReportFailed",
+			Message: err.Error(),
+		})
+		if errUpdate := r.HubClient.Status().Update(context.TODO(), msaCopy); errUpdate != nil {
+			return reconcile.Result{}, errors.Wrapf(errUpdate, "failed to update status")
+		}
+		return reconcile.Result{}, errors.Wrapf(err, "failed to sync token")
+	}
+
+	now := metav1.Now()
+	tokenRefreshTime := now
+
+	if expiring == nil {
+		logger.Info("Skipped creating token")
+		// token is not refreshed, keep the previous expiration timestamp
+		expiring = msa.Status.ExpirationTimestamp
+		if msa.Status.TokenSecretRef != nil {
+			tokenRefreshTime = msa.Status.TokenSecretRef.LastRefreshTimestamp
+		}
+	}
+
+	// after sync func succeeds, the secret must exist, add the conditions if not exist
+	meta.SetStatusCondition(&msaCopy.Status.Conditions, metav1.Condition{
+		Type:               authv1beta1.ConditionTypeSecretCreated,
+		Status:             metav1.ConditionTrue,
+		Reason:             "SecretCreated",
+		LastTransitionTime: now,
+	})
+
+	meta.SetStatusCondition(&msaCopy.Status.Conditions, metav1.Condition{
+		Type:               authv1beta1.ConditionTypeTokenReported,
+		Status:             metav1.ConditionTrue,
+		Reason:             "TokenReported",
+		LastTransitionTime: now,
+	})
+
+	msaCopy.Status.ExpirationTimestamp = expiring
+	msaCopy.Status.TokenSecretRef = &authv1beta1.SecretRef{
+		Name:                 msa.Name,
+		LastRefreshTimestamp: tokenRefreshTime,
+	}
+
+	if err := r.HubClient.Status().Update(context.TODO(), msaCopy); err != nil {
+		return reconcile.Result{}, errors.Wrapf(err, "failed to update status")
+	}
+
+	logger.Info("Refreshed token")
+	return reconcile.Result{}, nil
+}
+
+// sync is the main logic of token rotation, it returns the expiration time of the token if the token is created/updated
+func (r *TokenReconciler) sync(ctx context.Context,
+	managed *authv1beta1.ManagedServiceAccount) (*metav1.Time, error) {
 	secretExists := true
 	currentTokenSecret := &corev1.Secret{}
-	if err := r.HubClient.Get(context.TODO(), types.NamespacedName{
+	if err := r.HubClient.Get(ctx, types.NamespacedName{
 		Namespace: managed.Namespace,
 		Name:      managed.Name,
 	}, currentTokenSecret); err != nil {
 		if !apierrors.IsNotFound(err) {
-			return reconcile.Result{}, errors.Wrapf(err, "failed to read current token secret from hub cluster")
+			return nil, errors.Wrapf(err, "failed to read current token secret from hub cluster")
 		}
 		secretExists = false
 		currentTokenSecret = nil
 	}
 
 	if shouldCreate, err := r.isSoonExpiring(managed, currentTokenSecret); err != nil {
-		return reconcile.Result{}, errors.Wrapf(err, "failed to make a decision on token creation")
+		return nil, errors.Wrapf(err, "failed to make a decision on token creation")
 	} else if secretExists && !shouldCreate {
-		logger.Info("Skipped creating token")
-		return reconcile.Result{}, nil
+		return nil, nil
 	}
 
 	token, expiring, err := r.createToken(managed)
 	if err != nil {
-		return reconcile.Result{}, errors.Wrapf(err, "failed to request token for service-account")
+		return nil, errors.Wrapf(err, "failed to request token for service-account")
 	}
 
 	caData := r.SpokeClientConfig.CAData
@@ -112,56 +171,23 @@ func (r *TokenReconciler) Reconcile(ctx context.Context, request reconcile.Reque
 		var err error
 		caData, err = os.ReadFile(r.SpokeClientConfig.CAFile)
 		if err != nil {
-			return reconcile.Result{}, errors.Wrapf(err, "failed to read CA data from file")
+			return nil, errors.Wrapf(err, "failed to read CA data from file")
 		}
 	}
 
 	tokenSecret := buildSecret(managed, caData, []byte(token))
 	if secretExists {
 		currentTokenSecret.Data = tokenSecret.Data
-		if err := r.HubClient.Update(context.TODO(), currentTokenSecret); err != nil {
-			return reconcile.Result{}, errors.Wrapf(err, "failed to update the token secret")
+		if err := r.HubClient.Update(ctx, currentTokenSecret); err != nil {
+			return nil, errors.Wrapf(err, "failed to update the token secret")
 		}
 	} else {
-		if err := r.HubClient.Create(context.TODO(), tokenSecret); err != nil {
-			return reconcile.Result{}, errors.Wrapf(err, "failed to create the token secret")
+		if err := r.HubClient.Create(ctx, tokenSecret); err != nil {
+			return nil, errors.Wrapf(err, "failed to create the token secret")
 		}
 	}
 
-	now := metav1.Now()
-	conditions := []metav1.Condition{
-		{
-			Type:               authv1beta1.ConditionTypeTokenReported,
-			Status:             metav1.ConditionTrue,
-			Reason:             "TokenReported",
-			LastTransitionTime: now,
-		},
-	}
-	if !secretExists {
-		conditions = append(conditions, metav1.Condition{
-			Type:               authv1beta1.ConditionTypeSecretCreated,
-			Status:             metav1.ConditionTrue,
-			Reason:             "SecretCreated",
-			LastTransitionTime: now,
-		})
-	}
-	status := authv1beta1.ManagedServiceAccountStatus{
-		Conditions:          mergeConditions(managed.Status.Conditions, conditions),
-		ExpirationTimestamp: &expiring,
-		TokenSecretRef: &authv1beta1.SecretRef{
-			Name:                 managed.Name,
-			LastRefreshTimestamp: now,
-		},
-	}
-
-	munged := managed.DeepCopy()
-	munged.Status = status
-	if err := r.HubClient.Status().Update(context.TODO(), munged); err != nil {
-		return reconcile.Result{}, errors.Wrapf(err, "failed to update status")
-	}
-
-	logger.Info("Refreshed token")
-	return reconcile.Result{}, nil
+	return &expiring, nil
 }
 
 func (r *TokenReconciler) ensureServiceAccount(managed *authv1beta1.ManagedServiceAccount) error {
@@ -251,24 +277,4 @@ func (r *TokenReconciler) isSoonExpiring(managed *authv1beta1.ManagedServiceAcco
 	}
 
 	return !tr.Status.Authenticated, nil
-}
-
-func mergeConditions(old, new []metav1.Condition) []metav1.Condition {
-	for _, cnew := range new {
-		cnew := cnew
-		found := false
-		idx := 0
-		for i, cold := range old {
-			if cold.Type == cnew.Type {
-				found = true
-				idx = i
-			}
-		}
-		if found {
-			old[idx] = cnew
-		} else {
-			old = append(old, cnew)
-		}
-	}
-	return old
 }
