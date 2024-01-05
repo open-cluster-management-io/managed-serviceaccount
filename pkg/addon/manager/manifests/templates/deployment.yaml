@@ -13,7 +13,7 @@ spec:
       labels:
         addon-agent: managed-serviceaccount
     spec:
-      serviceAccount: managed-serviceaccount
+      serviceAccountName: managed-serviceaccount
 {{- if .NodeSelector }}
       nodeSelector:
       {{- range $key, $value := .NodeSelector }}

@@ -110,12 +110,20 @@ jobs:
           pushd release
           helm package ../charts/${{ env.CHART_NAME }}/
           popd
+      - name: generate changelog
+        run: |
+          echo "# Managed ServiceAccount ${{ needs.env.outputs.RELEASE_VERSION }}" > /home/runner/work/changelog.txt
       - name: publish release
-        uses: ncipollo/release-action@v1
+        uses: softprops/action-gh-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tag: ${{ env.RELEASE_VERSION }}
-          artifacts: "go/src/open-cluster-management.io/managed-serviceaccount/release/*.tgz"
-          token: ${{ secrets.GITHUB_TOKEN }}
+          body_path: /home/runner/work/changelog.txt
+          files: |
+            go/src/open-cluster-management.io/managed-serviceaccount/release/*.tgz
+          draft: true
+          prerelease: false
+          generate_release_notes: true
       - name: submit charts to OCM chart repo
         uses: actions/github-script@v6
         with:
