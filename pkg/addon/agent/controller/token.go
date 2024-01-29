@@ -11,6 +11,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -29,13 +30,18 @@ var _ reconcile.Reconciler = &TokenReconciler{}
 
 type TokenReconciler struct {
 	cache.Cache
-	HubClient         client.Client
-	HubNativeClient   kubernetes.Interface
-	SpokeNativeClient kubernetes.Interface
-	SpokeClientConfig *rest.Config
-	SpokeNamespace    string
-	ClusterName       string
-	SpokeCache        cache.Cache
+	HubClient            client.Client
+	HubNativeClient      kubernetes.Interface
+	SpokeNativeClient    kubernetes.Interface
+	SpokeDiscoveryClient discovery.DiscoveryInterface
+	SpokeClientConfig    *rest.Config
+	SpokeNamespace       string
+	ClusterName          string
+	SpokeCache           cache.Cache
+	// CreateTokenByDefaultSecret indicates whether to create the service account token by getting the default secret,
+	// if the api server is < 1.22, this should be true, otherwise, it should be false and the token will be requested
+	// by token request api
+	CreateTokenByDefaultSecret bool
 }
 
 // SetupWithManager sets up the controller with the Manager.
@@ -211,6 +217,14 @@ func (r *TokenReconciler) ensureServiceAccount(managed *authv1beta1.ManagedServi
 }
 
 func (r *TokenReconciler) createToken(managed *authv1beta1.ManagedServiceAccount) (string, metav1.Time, error) {
+	if r.CreateTokenByDefaultSecret {
+		return r.createTokenByDefaultSecret(managed)
+	}
+	return r.createTokenByTokenRequest(managed)
+}
+
+func (r *TokenReconciler) createTokenByTokenRequest(
+	managed *authv1beta1.ManagedServiceAccount) (string, metav1.Time, error) {
 	var expirationSec = int64(managed.Spec.Rotation.Validity.Seconds())
 	tr, err := r.SpokeNativeClient.CoreV1().ServiceAccounts(r.SpokeNamespace).
 		CreateToken(context.TODO(), managed.Name, &authv1.TokenRequest{
@@ -222,6 +236,37 @@ func (r *TokenReconciler) createToken(managed *authv1beta1.ManagedServiceAccount
 		return "", metav1.Time{}, err
 	}
 	return tr.Status.Token, tr.Status.ExpirationTimestamp, nil
+}
+
+func (r *TokenReconciler) createTokenByDefaultSecret(
+	managed *authv1beta1.ManagedServiceAccount) (string, metav1.Time, error) {
+
+	sa, err := r.SpokeNativeClient.CoreV1().ServiceAccounts(r.SpokeNamespace).Get(context.TODO(), managed.Name, metav1.GetOptions{})
+	if err != nil {
+		return "", metav1.Time{}, err
+	}
+
+	for _, secretRef := range sa.Secrets {
+		secret, err := r.SpokeNativeClient.CoreV1().Secrets(r.SpokeNamespace).Get(
+			context.TODO(), secretRef.Name, metav1.GetOptions{})
+		if err != nil {
+			return "", metav1.Time{}, err
+		}
+		if secret.Type != corev1.SecretTypeServiceAccountToken {
+			continue
+		}
+		if secret.Annotations[corev1.ServiceAccountNameKey] != managed.Name {
+			continue
+		}
+		if secret.Data["token"] == nil {
+			return "", metav1.Time{}, errors.Errorf("token is not found in secret %s", secret.Name)
+		}
+
+		defaultExpirationTime := metav1.NewTime(secret.CreationTimestamp.Add(managed.Spec.Rotation.Validity.Duration))
+		return string(secret.Data["token"]), defaultExpirationTime, nil
+	}
+
+	return "", metav1.Time{}, errors.Errorf("no default token is found for service account %s", managed.Name)
 }
 
 func buildSecret(managed *authv1beta1.ManagedServiceAccount, caData, tokenData []byte) *corev1.Secret {
