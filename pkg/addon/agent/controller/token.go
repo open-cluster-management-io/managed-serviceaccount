@@ -258,12 +258,12 @@ func (r *TokenReconciler) createTokenByDefaultSecret(
 		if secret.Annotations[corev1.ServiceAccountNameKey] != managed.Name {
 			continue
 		}
-		if secret.Data["token"] == nil {
+		if secret.Data[corev1.ServiceAccountTokenKey] == nil {
 			return "", metav1.Time{}, errors.Errorf("token is not found in secret %s", secret.Name)
 		}
 
 		defaultExpirationTime := metav1.NewTime(secret.CreationTimestamp.Add(managed.Spec.Rotation.Validity.Duration))
-		return string(secret.Data["token"]), defaultExpirationTime, nil
+		return string(secret.Data[corev1.ServiceAccountTokenKey]), defaultExpirationTime, nil
 	}
 
 	return "", metav1.Time{}, errors.Errorf("no default token is found for service account %s", managed.Name)
