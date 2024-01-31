@@ -124,14 +124,14 @@ func main() {
 	if err != nil {
 		klog.Fatalf("Failed api discovery in the spoke cluster: %v", err)
 	}
-	found := false
+	foundTokenRequest := false
 	for _, r := range resources.APIResources {
 		if r.Kind == "TokenRequest" {
-			found = true
+			foundTokenRequest = true
 		}
 	}
-	if !found {
-		klog.Fatalf(`No "serviceaccounts/token" resource discovered in the managed cluster,` +
+	if !foundTokenRequest {
+		klog.Warningf(`No "serviceaccounts/token" resource discovered in the managed cluster,` +
 			`is --service-account-signing-key-file configured for the kube-apiserver?`)
 	}
 
@@ -175,14 +175,15 @@ func main() {
 	}
 
 	if err = (&controller.TokenReconciler{
-		Cache:             mgr.GetCache(),
-		HubClient:         mgr.GetClient(),
-		HubNativeClient:   hubNativeClient,
-		SpokeNamespace:    spokeNamespace,
-		SpokeClientConfig: spokeCfg,
-		SpokeNativeClient: spokeNativeClient,
-		ClusterName:       clusterName,
-		SpokeCache:        spokeCache,
+		Cache:                      mgr.GetCache(),
+		HubClient:                  mgr.GetClient(),
+		HubNativeClient:            hubNativeClient,
+		SpokeNamespace:             spokeNamespace,
+		SpokeClientConfig:          spokeCfg,
+		SpokeNativeClient:          spokeNativeClient,
+		ClusterName:                clusterName,
+		SpokeCache:                 spokeCache,
+		CreateTokenByDefaultSecret: !foundTokenRequest,
 	}).SetupWithManager(mgr); err != nil {
 		klog.Fatalf("unable to create controller %v", "ManagedServiceAccount")
 	}
