@@ -52,6 +52,7 @@ func main() {
 	var clusterName string
 	var spokeKubeconfig string
 	var featureGatesFlags map[string]bool
+	var leaseHealthCheck bool
 
 	logger := klogr.New()
 	klog.SetOutput(os.Stdout)
@@ -69,7 +70,7 @@ func main() {
 		"feature-gates",
 		"A set of key=value pairs that describe feature gates for alpha/experimental features. "+
 			"Options are:\n"+strings.Join(features.FeatureGates.KnownFeatures(), "\n"))
-
+	flag.BoolVar(&leaseHealthCheck, "lease-health-check", false, "Use lease to report health check.")
 	flag.Parse()
 	ctrl.SetLogger(logger)
 
@@ -191,11 +192,13 @@ func main() {
 	ctx, cancel := context.WithCancel(ctrl.SetupSignalHandler())
 	defer cancel()
 
-	leaseUpdater, err := health.NewAddonHealthUpdater(mgr.GetConfig(), clusterName, spokeCfg, spokeNamespace)
-	if err != nil {
-		klog.Fatalf("unable to create healthiness lease updater for controller %v", "ManagedServiceAccount")
+	if leaseHealthCheck {
+		leaseUpdater, err := health.NewAddonHealthUpdater(mgr.GetConfig(), clusterName, spokeCfg, spokeNamespace)
+		if err != nil {
+			klog.Fatalf("unable to create healthiness lease updater for controller %v", "ManagedServiceAccount")
+		}
+		go leaseUpdater.Start(ctx)
 	}
-	go leaseUpdater.Start(ctx)
 
 	cc, err := addonutils.NewConfigChecker("managed-serviceaccount-agent", getHubKubeconfigPath())
 	if err != nil {

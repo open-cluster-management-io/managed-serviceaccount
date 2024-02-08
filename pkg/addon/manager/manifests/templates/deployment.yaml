@@ -42,6 +42,7 @@ spec:
             - --leader-elect=false
             - --cluster-name={{ .ClusterName }}
             - --kubeconfig=/etc/hub/kubeconfig
+            - --lease-health-check=true
           volumeMounts:
             - name: hub-kubeconfig
               mountPath: /etc/hub/
