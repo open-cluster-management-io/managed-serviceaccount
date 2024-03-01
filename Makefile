@@ -3,7 +3,7 @@
 IMG_REGISTRY ?= quay.io/open-cluster-management
 IMAGE_TAG ?= latest
 # Produce CRDs that work back to Kubernetes 1.11 (no version conversion)
-CRD_OPTIONS ?= "crd:trivialVersions=true,preserveUnknownFields=false"
+CRD_OPTIONS ?= "crd:crdVersions={v1},allowDangerousTypes=true,generateEmbeddedObjectMeta=true"
 E2E_TEST_CLUSTER_NAME ?= loopback
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
@@ -95,7 +95,7 @@ undeploy: ## Undeploy controller from the K8s cluster specified in ~/.kube/confi
 
 CONTROLLER_GEN = $(shell pwd)/bin/controller-gen
 controller-gen: ## Download controller-gen locally if necessary.
-	$(call go-get-tool,$(CONTROLLER_GEN),sigs.k8s.io/controller-tools/cmd/controller-gen@v0.6.2)
+	$(call go-get-tool,$(CONTROLLER_GEN),sigs.k8s.io/controller-tools/cmd/controller-gen@v0.14.0)
 
 KUSTOMIZE = $(shell pwd)/bin/kustomize
 kustomize: ## Download kustomize locally if necessary.
@@ -125,7 +125,7 @@ test-e2e: build-e2e
 	./bin/e2e --test-cluster $(E2E_TEST_CLUSTER_NAME) $(GENKGO_ARGS)
 
 client-gen:
-	go install k8s.io/code-generator/cmd/client-gen@v0.27.4
+	go install k8s.io/code-generator/cmd/client-gen@v0.29.2
 	client-gen --go-header-file hack/boilerplate.go.txt --clientset-name versioned \
 		--output-base ./_output/gen \
 		--output-package open-cluster-management.io/managed-serviceaccount/pkg/generated/clientset \
