@@ -41,6 +41,7 @@ import (
 	"open-cluster-management.io/addon-framework/pkg/addonmanager"
 	"open-cluster-management.io/addon-framework/pkg/agent"
 	"open-cluster-management.io/addon-framework/pkg/utils"
+	"open-cluster-management.io/api/addon/v1alpha1"
 	addonclient "open-cluster-management.io/api/client/addon/clientset/versioned"
 	authv1beta1 "open-cluster-management.io/managed-serviceaccount/apis/authentication/v1beta1"
 	"open-cluster-management.io/managed-serviceaccount/pkg/addon/commoncontroller"
@@ -191,7 +192,8 @@ func main() {
 			),
 		).
 		WithAgentRegistrationOption(manager.NewRegistrationOption(nativeClient)).
-		WithAgentDeployTriggerClusterFilter(utils.ClusterImageRegistriesAnnotationChanged)
+		WithAgentDeployTriggerClusterFilter(utils.ClusterImageRegistriesAnnotationChanged).
+		WithAgentInstallNamespace(func(addon *v1alpha1.ManagedClusterAddOn) string { return common.AddonAgentInstallNamespace })
 
 	if agentInstallAll {
 		agentFactory.WithInstallStrategy(agent.InstallAllStrategy(common.AddonAgentInstallNamespace))
