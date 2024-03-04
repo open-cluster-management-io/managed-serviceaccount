@@ -2,6 +2,7 @@ FROM brew.registry.redhat.io/rh-osbs/openshift-golang-builder:rhel_8_1.20 AS bui
 WORKDIR /go/src/github.com/open-cluster-management.io/managed-serviceaccount
 COPY . .
 RUN go env
+RUN go mod tidy && go mod vendor
 RUN make build-manager
 RUN make build-agent
 
