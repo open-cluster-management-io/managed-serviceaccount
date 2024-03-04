@@ -10,3 +10,4 @@ coverage:
 
 ignore:
   - "**/*generated*.go"
+# Test coverage is not required for generated files
