@@ -49,6 +49,7 @@ import (
 	"open-cluster-management.io/managed-serviceaccount/pkg/features"
 	"open-cluster-management.io/managed-serviceaccount/pkg/util"
 	ctrl "sigs.k8s.io/controller-runtime"
+	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	//+kubebuilder:scaffold:imports
 )
 
@@ -107,8 +108,7 @@ func main() {
 
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme:                 scheme,
-		MetricsBindAddress:     metricsAddr,
-		Port:                   9443,
+		Metrics:                metricsserver.Options{BindAddress: metricsAddr},
 		HealthProbeBindAddress: probeAddr,
 		LeaderElection:         enableLeaderElection,
 		LeaderElectionID:       "managed-serviceaccount-addon-manager",
@@ -181,13 +181,13 @@ func main() {
 		WithGetValuesFuncs(
 			manager.GetDefaultValues(addonAgentImageName, imagePullSecret),
 			addonfactory.GetAgentImageValues(
-				addonfactory.NewAddOnDeploymentConfigGetter(addonClient),
+				utils.NewAddOnDeploymentConfigGetter(addonClient),
 				"Image",
 				addonAgentImageName,
 			),
-			addonfactory.GetAddOnDeloymentConfigValues(
-				addonfactory.NewAddOnDeploymentConfigGetter(addonClient),
-				addonfactory.ToAddOnDeloymentConfigValues,
+			addonfactory.GetAddOnDeploymentConfigValues(
+				utils.NewAddOnDeploymentConfigGetter(addonClient),
+				addonfactory.ToAddOnDeploymentConfigValues,
 			),
 		).
 		WithAgentRegistrationOption(manager.NewRegistrationOption(nativeClient)).
