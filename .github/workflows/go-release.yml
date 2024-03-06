@@ -192,7 +192,8 @@ jobs:
         if: steps.update_chart_version.outputs.file_changed == 'true' && steps.check_pull_request.outputs.pr_exists != 'true'
         uses: peter-evans/create-pull-request@v6
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          # use OCM bot token to bypass "GitHub Actions is not permitted to create or approve pull requests."
+          token: ${{ secrets.OCM_BOT_PAT }}
           commit-message: |
             Update chart version to ${{ steps.calculate_next_version.outputs.next_version }}
           title: ":seedling: Update chart version to ${{ steps.calculate_next_version.outputs.next_version }}"
