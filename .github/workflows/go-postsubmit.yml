@@ -12,6 +12,7 @@ env:
   GO_VERSION: '1.21'
   GO_REQUIRED_MIN_VERSION: ''
   GOPATH: '/home/runner/work/managed-serviceaccount/managed-serviceaccount/go'
+
 defaults:
   run:
     working-directory: go/src/open-cluster-management.io/managed-serviceaccount
@@ -25,7 +26,7 @@ jobs:
         arch: [ amd64, arm64 ]
     steps:
       - name: checkout code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
         with:
           fetch-depth: 1
           path: go/src/open-cluster-management.io/managed-serviceaccount
@@ -52,7 +53,7 @@ jobs:
     needs: [ images ]
     steps:
       - name: checkout code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
         with:
           fetch-depth: 1
           path: go/src/open-cluster-management.io/managed-serviceaccount
