@@ -162,8 +162,22 @@ jobs:
         env:
           CURRENT_VERSION: ${{ needs.env.outputs.TRIMMED_RELEASE_VERSION }}
 
+      - name: update chart version file
+        id: update_chart_version
+        run: |
+          echo "Updating chart version file from $CURRENT_VERSION to $NEXT_VERSION"
+          sed -i "s/version: $CURRENT_VERSION/version: $NEXT_VERSION/" ${{ env.CHART_VERSION_FILE_PATH }}
+          git diff
+          FILE_CHANGED=$(git diff --exit-code --quiet && echo false || echo true)
+          echo "Chart version file changed: $FILE_CHANGED"
+          echo "file_changed=$FILE_CHANGED" >> $GITHUB_OUTPUT
+        env:
+          CURRENT_VERSION: ${{ needs.env.outputs.TRIMMED_RELEASE_VERSION }}
+          NEXT_VERSION: ${{ steps.calculate_next_version.outputs.next_version }}
+
       - name: check if pull request already exists
         id: check_pull_request
+        if : steps.update_chart_version.outputs.file_changed == 'true'
         run: |
           gh pr list --state open > pr_list.txt
           cat pr_list.txt
@@ -174,17 +188,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: update chart version file
-        if: steps.check_pull_request.outputs.pr_exists != 'true'
-        run: |
-          echo "Updating chart version file from $CURRENT_VERSION to $NEXT_VERSION"
-          sed -i "s/version: $CURRENT_VERSION/version: $NEXT_VERSION/" ${{ env.CHART_VERSION_FILE_PATH }}
-        env:
-          CURRENT_VERSION: ${{ needs.env.outputs.TRIMMED_RELEASE_VERSION }}
-          NEXT_VERSION: ${{ steps.calculate_next_version.outputs.next_version }}
-
       - name: create pull request
-        if: steps.check_pull_request.outputs.pr_exists != 'true'
+        if: steps.update_chart_version.outputs.file_changed == 'true' && steps.check_pull_request.outputs.pr_exists != 'true'
         uses: peter-evans/create-pull-request@v6
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -194,6 +199,7 @@ jobs:
           body: "Automatically updating chart version to ${{ steps.calculate_next_version.outputs.next_version }}"
           branch: update-chart-version-${{ steps.calculate_next_version.outputs.next_version }}
           signoff: true
+          base: main
         env:
           CURRENT_VERSION: ${{ needs.env.outputs.TRIMMED_RELEASE_VERSION }}
           NEXT_VERSION: ${{ steps.calculate_next_version.outputs.next_version }}
