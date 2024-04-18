@@ -336,7 +336,7 @@ func (f fakeCache) List(ctx context.Context, list client.ObjectList, opts ...cli
 	panic("implement me")
 }
 
-func (f fakeCache) GetInformer(ctx context.Context, obj client.Object) (cache.Informer, error) {
+func (f fakeCache) GetInformer(ctx context.Context, obj client.Object, opts ...cache.InformerGetOption) (cache.Informer, error) {
 	panic("implement me")
 }
 
@@ -360,7 +360,11 @@ func (f fakeCache) Delete(key string) {
 	panic("implement me")
 }
 
-func (f fakeCache) GetInformerForKind(ctx context.Context, gvk schema.GroupVersionKind) (cache.Informer, error) {
+func (f fakeCache) GetInformerForKind(ctx context.Context, gvk schema.GroupVersionKind, opts ...cache.InformerGetOption) (cache.Informer, error) {
+	panic("implement me")
+}
+
+func (f fakeCache) RemoveInformer(ctx context.Context, obj client.Object) error {
 	panic("implement me")
 }
 

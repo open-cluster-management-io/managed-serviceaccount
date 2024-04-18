@@ -25,6 +25,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
+	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	authv1beta1 "open-cluster-management.io/managed-serviceaccount/apis/authentication/v1beta1"
 	"open-cluster-management.io/managed-serviceaccount/pkg/addon/agent/controller"
@@ -97,15 +98,18 @@ func main() {
 	}
 
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
-		// Only watch resources in the managed cluster namespace on the hub cluster.
-		Namespace:              clusterName,
 		Scheme:                 scheme,
-		MetricsBindAddress:     metricsAddr,
-		Port:                   9443,
+		Metrics:                metricsserver.Options{BindAddress: metricsAddr},
 		HealthProbeBindAddress: probeAddr,
 		LeaderElection:         enableLeaderElection,
 		LeaderElectionID:       "managed-serviceaccount-addon-agent",
 		LeaderElectionConfig:   spokeCfg,
+		Cache: cache.Options{
+			// Only watch resources in the managed cluster namespace on the hub cluster.
+			DefaultNamespaces: map[string]cache.Config{
+				clusterName: {},
+			},
+		},
 	})
 	if err != nil {
 		klog.Fatal("unable to start manager")
@@ -148,14 +152,17 @@ func main() {
 	spokeCache, err := cache.New(spokeCfg, cache.Options{
 		ByObject: map[client.Object]cache.ByObject{
 			&corev1.ServiceAccount{}: {
-				Label: labels.SelectorFromSet(
-					labels.Set{
-						common.LabelKeyIsManagedServiceAccount: "true",
+				Namespaces: map[string]cache.Config{
+					spokeNamespace: {
+						LabelSelector: labels.SelectorFromSet(
+							labels.Set{
+								common.LabelKeyIsManagedServiceAccount: "true",
+							},
+						),
 					},
-				),
+				},
 			},
 		},
-		Namespaces: []string{spokeNamespace},
 	})
 	if err != nil {
 		klog.Fatal("unable to instantiate a spoke serviceaccount cache")
