@@ -9,6 +9,12 @@ on:
   # main branch.
   pull_request_target:
     types: [opened, edited, reopened, synchronize]
+    branches:
+      - main
+      - release-*
+
+permissions:
+  contents: read
 
 jobs:
   verify:
