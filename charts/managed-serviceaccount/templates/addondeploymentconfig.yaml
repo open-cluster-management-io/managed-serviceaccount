@@ -5,5 +5,5 @@ metadata:
   name: managed-serviceaccount-addon-deploy-config
   namespace: {{ .Release.Namespace }}
 spec:
-  agentInstallNamespace: open-cluster-management-agent-addon
+  {}
 {{- end }}
