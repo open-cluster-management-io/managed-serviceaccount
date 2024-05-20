@@ -16,9 +16,6 @@ spec:
     resource: addondeploymentconfigs
 {{- end }}
 {{- if eq .Values.hubDeployMode "AddOnTemplate" }}
-    defaultConfig:
-      namespace: {{ .Release.Namespace }}
-      name: managed-serviceaccount-addon-deploy-config
   - group: addon.open-cluster-management.io
     resource: addontemplates
     defaultConfig:
