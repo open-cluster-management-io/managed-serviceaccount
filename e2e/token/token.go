@@ -35,7 +35,6 @@ var _ = Describe("Token Test for Managed Service Account v1beta1",
 				},
 				Spec: authv1beta1.ManagedServiceAccountSpec{
 					Rotation: authv1beta1.ManagedServiceAccountRotation{
-						Enabled:  true,
 						Validity: metav1.Duration{Duration: time.Minute * 30},
 					},
 				},

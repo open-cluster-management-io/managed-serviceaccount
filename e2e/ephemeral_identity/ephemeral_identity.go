@@ -37,7 +37,6 @@ var _ = Describe("Ephemeral ManagedServiceAccount Test", Label("ephemeral"), fun
 			},
 			Spec: authv1beta1.ManagedServiceAccountSpec{
 				Rotation: authv1beta1.ManagedServiceAccountRotation{
-					Enabled:  true,
 					Validity: metav1.Duration{Duration: time.Minute * 30},
 				},
 				TTLSecondsAfterCreation: &ttlSecond,
