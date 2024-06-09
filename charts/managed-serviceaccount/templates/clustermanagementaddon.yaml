@@ -2,10 +2,8 @@ apiVersion: addon.open-cluster-management.io/v1alpha1
 kind: ClusterManagementAddOn
 metadata:
   name: managed-serviceaccount
-{{- if eq .Values.hubDeployMode "AddOnTemplate" }}
   annotations:
     addon.open-cluster-management.io/lifecycle: "addon-manager"
-{{- end }}
 spec:
   addOnMeta:
     displayName: managed-serviceaccount
@@ -21,3 +19,8 @@ spec:
     defaultConfig:
       name: {{ .Values.addOnTemplateName | default (print "managed-serviceaccount-" .Chart.Version) }}
 {{- end }}
+  installStrategy:
+    type: Placements
+    placements:
+      - name: {{ .Values.installByPlacement.placementName | default "managed-serviceaccount-placement"  }}
+        namespace: {{ .Values.installByPlacement.placementNamespace | default .Release.Namespace }}

@@ -26,7 +26,6 @@ spec:
             - --leader-elect=true
             {{- end }}
             - --agent-image-name={{ .Values.image }}:{{ .Values.tag | default (print "v" .Chart.Version) }}
-            - --agent-install-all={{ .Values.agentInstallAll }}
             {{- if .Values.featureGates }}
             - --feature-gates=EphemeralIdentity={{ .Values.featureGates.ephemeralIdentity | default false}}
             {{- end}}
