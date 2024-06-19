@@ -10,13 +10,9 @@ spec:
   addOnMeta:
     displayName: managed-serviceaccount
     description: managed-serviceaccount
-{{- if or (.Values.enableAddOnDeploymentConfig) (eq .Values.hubDeployMode "AddOnTemplate") }}
   supportedConfigs:
-{{- end }}
-{{- if .Values.enableAddOnDeploymentConfig }}
   - group: addon.open-cluster-management.io
     resource: addondeploymentconfigs
-{{- end }}
 {{- if eq .Values.hubDeployMode "AddOnTemplate" }}
   - group: addon.open-cluster-management.io
     resource: addontemplates
