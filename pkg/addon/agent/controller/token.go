@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"os"
+	"time"
 
 	"github.com/pkg/errors"
 	authv1 "k8s.io/api/authentication/v1"
@@ -142,7 +143,12 @@ func (r *TokenReconciler) Reconcile(ctx context.Context, request reconcile.Reque
 	}
 
 	logger.Info("Refreshed token")
-	return reconcile.Result{}, nil
+	return reconcile.Result{
+		// requeue periodically to check if the token needs to be refreshed.
+		// The minimum rotation.validity is 10 minutes, and it will be refreshed one-fifth before expiration,
+		// so 90 seconds seems to be a reasonable value.
+		RequeueAfter: 90 * time.Second,
+	}, nil
 }
 
 // sync is the main logic of token rotation, it returns the expiration time of the token if the token is created/updated
