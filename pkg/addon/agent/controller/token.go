@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"os"
+	"reflect"
 	"time"
 
 	"github.com/pkg/errors"
@@ -138,17 +139,29 @@ func (r *TokenReconciler) Reconcile(ctx context.Context, request reconcile.Reque
 		LastRefreshTimestamp: tokenRefreshTime,
 	}
 
-	if err := r.HubClient.Status().Update(context.TODO(), msaCopy); err != nil {
-		return reconcile.Result{}, errors.Wrapf(err, "failed to update status")
+	if !reflect.DeepEqual(msa.Status, msaCopy.Status) {
+		if err := r.HubClient.Status().Update(context.TODO(), msaCopy); err != nil {
+			return reconcile.Result{}, errors.Wrapf(err, "failed to update status")
+		}
+		logger.Info("Token refreshed")
 	}
 
-	logger.Info("Refreshed token")
 	return reconcile.Result{
-		// requeue periodically to check if the token needs to be refreshed.
-		// The minimum rotation.validity is 10 minutes, and it will be refreshed one-fifth before expiration,
-		// so 90 seconds seems to be a reasonable value.
-		RequeueAfter: 90 * time.Second,
+		// When the token is about to expire, requeue to trigger the token refresh
+		// Requeue even if the token is not refreshed, otherwise if the agent restarts
+		// at the time that the token is not expried, no chance to trigger the token refresh
+		RequeueAfter: checkTokenRefreshAfter(now, expiring, msa.Spec.Rotation.Validity.Duration),
 	}, nil
+}
+
+func checkTokenRefreshAfter(now metav1.Time, expiring *metav1.Time, validityDuration time.Duration) time.Duration {
+	refreshThreshold := validityDuration / 5 * 1
+	lifetime := expiring.Sub(now.Time)
+	if (lifetime - refreshThreshold) > 0 {
+		return lifetime - refreshThreshold + time.Duration(5*time.Second)
+	} else {
+		return time.Duration(5 * time.Second)
+	}
 }
 
 // sync is the main logic of token rotation, it returns the expiration time of the token if the token is created/updated
