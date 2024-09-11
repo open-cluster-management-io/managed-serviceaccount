@@ -144,12 +144,13 @@ func (r *TokenReconciler) Reconcile(ctx context.Context, request reconcile.Reque
 			return reconcile.Result{}, errors.Wrapf(err, "failed to update status")
 		}
 		logger.Info("Token refreshed")
+		return reconcile.Result{}, nil
 	}
 
 	return reconcile.Result{
-		// When the token is about to expire, requeue to trigger the token refresh
 		// Requeue even if the token is not refreshed, otherwise if the agent restarts
-		// at the time that the token is not expried, no chance to trigger the token refresh
+		// at the time that the token is not expried, no chance to trigger the expiration
+		// check again
 		RequeueAfter: checkTokenRefreshAfter(now, expiring, msa.Spec.Rotation.Validity.Duration),
 	}, nil
 }
