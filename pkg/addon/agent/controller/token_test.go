@@ -649,3 +649,36 @@ func TestReconcileCreateTokenByDefaultSecret(t *testing.T) {
 		})
 	}
 }
+
+func TestCheckTokenRefreshAfter(t *testing.T) {
+	now := metav1.Time{Time: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)}
+	cases := []struct {
+		name                 string
+		expiring             *metav1.Time
+		validityDuration     time.Duration
+		expectedRequeueAfter time.Duration
+	}{
+		{
+			name:                 "expired",
+			expiring:             &metav1.Time{Time: time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC)},
+			validityDuration:     10 * time.Hour,
+			expectedRequeueAfter: 5 * time.Second,
+		},
+		{
+			name:                 "not expired",
+			expiring:             &metav1.Time{Time: time.Date(2024, 1, 1, 9, 0, 0, 0, time.UTC)},
+			validityDuration:     10 * time.Hour,
+			expectedRequeueAfter: 7*time.Hour + 5*time.Second,
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+
+			ra := checkTokenRefreshAfter(now, c.expiring, c.validityDuration)
+			if ra != c.expectedRequeueAfter {
+				t.Errorf("expected %v but got %v", c.expectedRequeueAfter, ra)
+			}
+
+		})
+	}
+}
