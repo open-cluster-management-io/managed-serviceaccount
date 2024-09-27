@@ -36,7 +36,6 @@ import (
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	cliflag "k8s.io/component-base/cli/flag"
 	"k8s.io/klog/v2"
-	"k8s.io/klog/v2/klogr"
 	"open-cluster-management.io/addon-framework/pkg/addonfactory"
 	"open-cluster-management.io/addon-framework/pkg/addonmanager"
 	"open-cluster-management.io/addon-framework/pkg/agent"
@@ -73,7 +72,7 @@ func main() {
 	var imagePullSecretName string
 	var featureGatesFlags map[string]bool
 
-	logger := klogr.New()
+	logger := klog.Background()
 	klog.SetOutput(os.Stdout)
 	klog.InitFlags(flag.CommandLine)
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":38080", "The address the metric endpoint binds to.")
