@@ -19,6 +19,7 @@ package main
 import (
 	"context"
 	"flag"
+	"open-cluster-management.io/api/addon/v1alpha1"
 	"os"
 	"strings"
 
@@ -38,7 +39,6 @@ import (
 	"k8s.io/klog/v2"
 	"open-cluster-management.io/addon-framework/pkg/addonfactory"
 	"open-cluster-management.io/addon-framework/pkg/addonmanager"
-	"open-cluster-management.io/addon-framework/pkg/agent"
 	"open-cluster-management.io/addon-framework/pkg/utils"
 	addonclient "open-cluster-management.io/api/client/addon/clientset/versioned"
 	authv1beta1 "open-cluster-management.io/managed-serviceaccount/apis/authentication/v1beta1"
@@ -68,7 +68,6 @@ func main() {
 	var enableLeaderElection bool
 	var probeAddr string
 	var addonAgentImageName string
-	var agentInstallAll bool
 	var imagePullSecretName string
 	var featureGatesFlags map[string]bool
 
@@ -82,10 +81,6 @@ func main() {
 	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
-	flag.BoolVar(
-		&agentInstallAll, "agent-install-all", false,
-		"Configure the install strategy of agent on managed clusters. "+
-			"Enabling this will automatically install agent on all managed cluster.")
 	flag.Var(
 		cliflag.NewMapStringBool(&featureGatesFlags),
 		"feature-gates",
@@ -190,11 +185,8 @@ func main() {
 			),
 		).
 		WithAgentRegistrationOption(manager.NewRegistrationOption(nativeClient)).
-		WithAgentDeployTriggerClusterFilter(utils.ClusterImageRegistriesAnnotationChanged)
-
-	if agentInstallAll {
-		agentFactory.WithInstallStrategy(agent.InstallAllStrategy(common.AddonAgentInstallNamespace))
-	}
+		WithAgentDeployTriggerClusterFilter(utils.ClusterImageRegistriesAnnotationChanged).
+		WithAgentInstallNamespace(func(addon *v1alpha1.ManagedClusterAddOn) string { return common.AddonAgentInstallNamespace })
 
 	agentAddOn, err := agentFactory.BuildTemplateAgentAddon()
 	if err != nil {
