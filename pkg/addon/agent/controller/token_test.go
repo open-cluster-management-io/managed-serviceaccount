@@ -18,7 +18,9 @@ import (
 	fakekube "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/rest"
 	clienttesting "k8s.io/client-go/testing"
+	"k8s.io/klog/v2"
 	authv1beta1 "open-cluster-management.io/managed-serviceaccount/apis/authentication/v1beta1"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -32,7 +34,10 @@ func TestReconcile(t *testing.T) {
 	token2 := "token2"
 	ca1 := "ca1"
 	ca2 := "ca2"
+	logger := klog.Background()
+	ctrl.SetLogger(logger)
 
+	now := time.Now()
 	cases := []struct {
 		name                   string
 		msa                    *authv1beta1.ManagedServiceAccount
@@ -106,7 +111,7 @@ func TestReconcile(t *testing.T) {
 			secret: newSecret(clusterName, msaName, token1, ca1),
 			msa: newManagedServiceAccount(clusterName, msaName).
 				withRotationValidity(500*time.Second).
-				withTokenSecretRef(msaName, time.Now().Add(300*time.Second)).
+				withTokenSecretRef(msaName, now.Add(300*time.Second), now).
 				build(),
 			newToken: token1,
 			validateFunc: func(t *testing.T, hubClient client.Client, actions []clienttesting.Action) {
@@ -157,7 +162,7 @@ func TestReconcile(t *testing.T) {
 			secret: newSecret(clusterName, msaName, token1, ca1),
 			msa: newManagedServiceAccount(clusterName, msaName).
 				withRotationValidity(500*time.Second).
-				withTokenSecretRef(msaName, time.Now().Add(80*time.Second)).
+				withTokenSecretRef(msaName, now.Add(10*time.Second), now.Add(-100*time.Second)).
 				build(),
 			newToken: token2,
 			validateFunc: func(t *testing.T, hubClient client.Client, actions []clienttesting.Action) {
@@ -179,14 +184,14 @@ func TestReconcile(t *testing.T) {
 			secret: newSecret(clusterName, msaName, token2, ca2),
 			msa: newManagedServiceAccount(clusterName, msaName).
 				withRotationValidity(500*time.Second).
-				withTokenSecretRef(msaName, time.Now().Add(300*time.Second)).
+				withTokenSecretRef(msaName, now.Add(300*time.Second), now).
 				build(),
 			newToken:               token1,
 			isExistingTokenInvalid: true,
 			validateFunc: func(t *testing.T, hubClient client.Client, actions []clienttesting.Action) {
 				assertActions(t, actions, "create", // create serviceaccount
 					"create", // create tokenreview
-					"create", // create tokenreview
+					"create", // create token
 				)
 				assertToken(t, hubClient, clusterName, msaName, token1, ca1)
 				assertMSAConditions(t, hubClient, clusterName, msaName, []metav1.Condition{
@@ -206,7 +211,7 @@ func TestReconcile(t *testing.T) {
 			}),
 			msa: newManagedServiceAccount(clusterName, msaName).
 				withRotationValidity(500*time.Second).
-				withTokenSecretRef(msaName, time.Now().Add(300*time.Second)).
+				withTokenSecretRef(msaName, now.Add(300*time.Second), now).
 				build(),
 			newToken:               token1,
 			isExistingTokenInvalid: true,
@@ -223,6 +228,7 @@ func TestReconcile(t *testing.T) {
 		},
 	}
 	for _, c := range cases {
+
 		t.Run(c.name, func(t *testing.T) {
 			// create fake kube client of the managed cluster
 			objs := []runtime.Object{}
@@ -394,11 +400,13 @@ func (b *managedServiceAccountBuilder) withRotationValidity(duration time.Durati
 	return b
 }
 
-func (b *managedServiceAccountBuilder) withTokenSecretRef(secretName string, expirationTimestamp time.Time) *managedServiceAccountBuilder {
+func (b *managedServiceAccountBuilder) withTokenSecretRef(secretName string,
+	expiration, lastRefresh time.Time) *managedServiceAccountBuilder {
 	b.msa.Status.TokenSecretRef = &authv1beta1.SecretRef{
-		Name: secretName,
+		Name:                 secretName,
+		LastRefreshTimestamp: metav1.NewTime(lastRefresh),
 	}
-	timestamp := metav1.NewTime(expirationTimestamp)
+	timestamp := metav1.NewTime(expiration)
 	b.msa.Status.ExpirationTimestamp = &timestamp
 	return b
 }
@@ -651,30 +659,30 @@ func TestReconcileCreateTokenByDefaultSecret(t *testing.T) {
 }
 
 func TestCheckTokenRefreshAfter(t *testing.T) {
-	now := metav1.Time{Time: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)}
+	now := metav1.Time{Time: time.Date(2024, 1, 1, 1, 0, 0, 0, time.UTC)}
 	cases := []struct {
 		name                 string
-		expiring             *metav1.Time
-		validityDuration     time.Duration
+		expiring             metav1.Time
+		lastRefreshTimestamp metav1.Time
 		expectedRequeueAfter time.Duration
 	}{
 		{
 			name:                 "expired",
-			expiring:             &metav1.Time{Time: time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC)},
-			validityDuration:     10 * time.Hour,
+			expiring:             metav1.Time{Time: time.Date(2024, 1, 1, 0, 0, 10, 0, time.UTC)},
+			lastRefreshTimestamp: metav1.Time{Time: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)},
 			expectedRequeueAfter: 5 * time.Second,
 		},
 		{
 			name:                 "not expired",
-			expiring:             &metav1.Time{Time: time.Date(2024, 1, 1, 9, 0, 0, 0, time.UTC)},
-			validityDuration:     10 * time.Hour,
+			expiring:             metav1.Time{Time: time.Date(2024, 1, 1, 10, 0, 0, 0, time.UTC)},
+			lastRefreshTimestamp: metav1.Time{Time: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)},
 			expectedRequeueAfter: 7*time.Hour + 5*time.Second,
 		},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 
-			ra := checkTokenRefreshAfter(now, c.expiring, c.validityDuration)
+			ra := checkTokenRefreshAfter(now, c.expiring, c.lastRefreshTimestamp)
 			if ra != c.expectedRequeueAfter {
 				t.Errorf("expected %v but got %v", c.expectedRequeueAfter, ra)
 			}
