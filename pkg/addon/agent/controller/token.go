@@ -71,14 +71,14 @@ func (r *TokenReconciler) Reconcile(ctx context.Context, request reconcile.Reque
 
 	if err := r.Cache.Get(ctx, request.NamespacedName, msa); err != nil {
 		if !apierrors.IsNotFound(err) {
-			//fail to get managed-serviceaccount, requeue
+			// fail to get managed-serviceaccount, requeue
 			return reconcile.Result{}, errors.Wrapf(err, "fail to get managed serviceaccount")
 		}
 
 		sai := r.SpokeNativeClient.CoreV1().ServiceAccounts(r.SpokeNamespace)
 		if err := sai.Delete(ctx, request.Name, metav1.DeleteOptions{}); err != nil {
 			if !apierrors.IsNotFound(err) {
-				//fail to delete related serviceaccount, requeue
+				// fail to delete related serviceaccount, requeue
 				return reconcile.Result{}, errors.Wrapf(err, "fail to delete related serviceaccount")
 			}
 		}
@@ -107,67 +107,73 @@ func (r *TokenReconciler) Reconcile(ctx context.Context, request reconcile.Reque
 	}
 
 	now := metav1.Now()
-	tokenRefreshTime := now
-
+	var requeueAfter time.Duration = 0
 	if expiring == nil {
-		logger.Info("Skipped creating token")
-		// token is not refreshed, keep the previous expiration timestamp
-		expiring = msa.Status.ExpirationTimestamp
-		if msa.Status.TokenSecretRef != nil {
-			tokenRefreshTime = msa.Status.TokenSecretRef.LastRefreshTimestamp
+		// token is not expiried, no need to refresh, just calculate the requeue time
+		if msa.Status.TokenSecretRef == nil || msa.Status.ExpirationTimestamp == nil {
+			return reconcile.Result{}, errors.New("token secret ref or expiration time is nil but token not refreshed")
 		}
-	}
 
-	// after sync func succeeds, the secret must exist, add the conditions if not exist
-	meta.SetStatusCondition(&msaCopy.Status.Conditions, metav1.Condition{
-		Type:               authv1beta1.ConditionTypeSecretCreated,
-		Status:             metav1.ConditionTrue,
-		Reason:             "SecretCreated",
-		LastTransitionTime: now,
-	})
+		setManagedServiceAccountSuccessStatus(msaCopy, msa.Status.ExpirationTimestamp,
+			now, msa.Status.TokenSecretRef.LastRefreshTimestamp)
 
-	meta.SetStatusCondition(&msaCopy.Status.Conditions, metav1.Condition{
-		Type:               authv1beta1.ConditionTypeTokenReported,
-		Status:             metav1.ConditionTrue,
-		Reason:             "TokenReported",
-		LastTransitionTime: now,
-	})
+		// Requeue even if the token is not refreshed, otherwise if the agent restarts
+		// at the time that the token is not expried, no chance to trigger the expiration
+		// check again
+		requeueAfter = checkTokenRefreshAfter(now,
+			*msa.Status.ExpirationTimestamp, msa.Status.TokenSecretRef.LastRefreshTimestamp)
 
-	msaCopy.Status.ExpirationTimestamp = expiring
-	msaCopy.Status.TokenSecretRef = &authv1beta1.SecretRef{
-		Name:                 msa.Name,
-		LastRefreshTimestamp: tokenRefreshTime,
+	} else {
+		// after sync func succeeds, the secret must exist, add the conditions if not exist
+		setManagedServiceAccountSuccessStatus(msaCopy, expiring, now, now)
 	}
 
 	if !reflect.DeepEqual(msa.Status, msaCopy.Status) {
 		if err := r.HubClient.Status().Update(context.TODO(), msaCopy); err != nil {
 			return reconcile.Result{}, errors.Wrapf(err, "failed to update status")
 		}
-		logger.Info("Token refreshed")
-		return reconcile.Result{}, nil
 	}
 
-	return reconcile.Result{
-		// Requeue even if the token is not refreshed, otherwise if the agent restarts
-		// at the time that the token is not expried, no chance to trigger the expiration
-		// check again
-		RequeueAfter: checkTokenRefreshAfter(now, expiring, msa.Spec.Rotation.Validity.Duration),
-	}, nil
+	return reconcile.Result{RequeueAfter: requeueAfter}, nil
 }
 
-func checkTokenRefreshAfter(now metav1.Time, expiring *metav1.Time, validityDuration time.Duration) time.Duration {
-	refreshThreshold := validityDuration / 5 * 1
-	lifetime := expiring.Sub(now.Time)
-	if (lifetime - refreshThreshold) > 0 {
-		return lifetime - refreshThreshold + time.Duration(5*time.Second)
-	} else {
+func setManagedServiceAccountSuccessStatus(msaCopy *authv1beta1.ManagedServiceAccount,
+	expiring *metav1.Time, lastTransitionTime, lastRreshTimestamp metav1.Time) {
+
+	// after sync func succeeds, the secret must exist, add the conditions if not exist
+	meta.SetStatusCondition(&msaCopy.Status.Conditions, metav1.Condition{
+		Type:               authv1beta1.ConditionTypeSecretCreated,
+		Status:             metav1.ConditionTrue,
+		Reason:             "SecretCreated",
+		LastTransitionTime: lastTransitionTime,
+	})
+
+	meta.SetStatusCondition(&msaCopy.Status.Conditions, metav1.Condition{
+		Type:               authv1beta1.ConditionTypeTokenReported,
+		Status:             metav1.ConditionTrue,
+		Reason:             "TokenReported",
+		LastTransitionTime: lastTransitionTime,
+	})
+
+	msaCopy.Status.ExpirationTimestamp = expiring
+	msaCopy.Status.TokenSecretRef = &authv1beta1.SecretRef{
+		Name:                 msaCopy.Name,
+		LastRefreshTimestamp: lastRreshTimestamp,
+	}
+}
+
+func checkTokenRefreshAfter(now metav1.Time, expiring metav1.Time, lastRefreshTimestamp metav1.Time) time.Duration {
+	exceed, threshold := exceedThreshold(now, expiring, lastRefreshTimestamp)
+	if exceed {
 		return time.Duration(5 * time.Second)
 	}
+	return threshold.Sub(now.Time) + time.Duration(5*time.Second)
 }
 
 // sync is the main logic of token rotation, it returns the expiration time of the token if the token is created/updated
 func (r *TokenReconciler) sync(ctx context.Context,
 	managed *authv1beta1.ManagedServiceAccount) (*metav1.Time, error) {
+	logger := log.FromContext(ctx)
 	secretExists := true
 	currentTokenSecret := &corev1.Secret{}
 	if err := r.HubClient.Get(ctx, types.NamespacedName{
@@ -213,6 +219,7 @@ func (r *TokenReconciler) sync(ctx context.Context,
 		}
 	}
 
+	logger.Info("Token refreshed", "expirationTimestamp", expiring)
 	return &expiring, nil
 }
 
@@ -314,25 +321,21 @@ func buildSecret(managed *authv1beta1.ManagedServiceAccount, caData, tokenData [
 	}
 }
 
-func (r *TokenReconciler) isSoonExpiring(managed *authv1beta1.ManagedServiceAccount, tokenSecret *corev1.Secret) (bool, error) {
-	if managed.Status.TokenSecretRef == nil || tokenSecret == nil {
+func (r *TokenReconciler) isSoonExpiring(msa *authv1beta1.ManagedServiceAccount, secret *corev1.Secret) (bool, error) {
+	if msa.Status.TokenSecretRef == nil || msa.Status.ExpirationTimestamp == nil || secret == nil {
 		return true, nil
 	}
 
-	// check if the token should be refreshed
-	// the token will not be rotated unless its remaining lifetime is less
-	// than 20% of its rotation validity
 	now := metav1.Now()
-	refreshThreshold := managed.Spec.Rotation.Validity.Duration / 5 * 1
-	lifetime := managed.Status.ExpirationTimestamp.Sub(now.Time)
-	if lifetime < refreshThreshold {
+	if exceed, _ := exceedThreshold(now, *msa.Status.ExpirationTimestamp,
+		msa.Status.TokenSecretRef.LastRefreshTimestamp); exceed {
 		return true, nil
 	}
 
 	// check if the token is valid or not
 	tokenReview := &authv1.TokenReview{
 		Spec: authv1.TokenReviewSpec{
-			Token: string(tokenSecret.Data[corev1.ServiceAccountTokenKey]),
+			Token: string(secret.Data[corev1.ServiceAccountTokenKey]),
 		},
 	}
 	tr, err := r.SpokeNativeClient.AuthenticationV1().TokenReviews().Create(
@@ -342,4 +345,14 @@ func (r *TokenReconciler) isSoonExpiring(managed *authv1beta1.ManagedServiceAcco
 	}
 
 	return !tr.Status.Authenticated, nil
+}
+
+func exceedThreshold(now metav1.Time, expiring metav1.Time, lastRefreshTimestamp metav1.Time) (bool, time.Time) {
+	// Check if the token should be refreshed, the token will not be rotated unless its remaining lifetime is
+	// less than 20% of its rotation validity
+	// Some kubernetes distribution may have a maximum token lifetime, for example, eks will shorten the token lifetime
+	// to 1 day, so here we use the real expiration time and last refresh time, instead of the requested expiration time
+	// in the managedserviceaccount.spec.rotation.validity, to calculate the refresh threshold
+	threshold := lastRefreshTimestamp.Add(expiring.Sub(lastRefreshTimestamp.Time) / 5 * 4)
+	return now.Time.After(threshold), threshold
 }
