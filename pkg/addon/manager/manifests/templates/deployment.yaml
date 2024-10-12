@@ -37,7 +37,8 @@ spec:
           image: {{ .Image }}
           imagePullPolicy: IfNotPresent
           command:
-            - /agent
+            - /msa
+            - agent
           args:
             - --leader-elect=false
             - --cluster-name={{ .ClusterName }}

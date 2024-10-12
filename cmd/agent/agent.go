@@ -1,4 +1,4 @@
-package main
+package agent
 
 import (
 	"context"
@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -19,7 +21,6 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 	cliflag "k8s.io/component-base/cli/flag"
 	"k8s.io/klog/v2"
-	"k8s.io/klog/v2/klogr"
 	addonutils "open-cluster-management.io/addon-framework/pkg/utils"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
@@ -45,48 +46,76 @@ func init() {
 	utilruntime.Must(authv1beta1.AddToScheme(scheme))
 }
 
-func main() {
+func NewAgent() *cobra.Command {
+	agentOpts := NewAgentOptions()
 
-	var metricsAddr string
-	var enableLeaderElection bool
-	var probeAddr string
-	var clusterName string
-	var spokeKubeconfig string
-	var featureGatesFlags map[string]bool
-	var leaseHealthCheck bool
+	cmd := &cobra.Command{
+		Use:   "agent",
+		Short: "Start the managed service account addon agent",
+		Run: func(cmd *cobra.Command, args []string) {
+			if err := agentOpts.Run(); err != nil {
+				klog.Fatal(err)
+			}
+		},
+	}
 
-	logger := klogr.New()
-	klog.SetOutput(os.Stdout)
-	klog.InitFlags(flag.CommandLine)
-	flag.StringVar(&metricsAddr, "metrics-bind-address", ":38080", "The address the metric endpoint binds to.")
-	flag.StringVar(&probeAddr, "health-probe-bind-address", ":38081", "The address the probe endpoint binds to.")
-	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
+	flags := cmd.Flags()
+	agentOpts.AddFlags(flags)
+
+	return cmd
+}
+
+func (o *AgentOptions) AddFlags(flags *pflag.FlagSet) {
+	flags.StringVar(&o.MetricsAddr, "metrics-bind-address", ":38080", "The address the metric endpoint binds to.")
+	flags.StringVar(&o.ProbeAddr, "health-probe-bind-address", ":38081", "The address the probe endpoint binds to.")
+	flags.BoolVar(&o.EnableLeaderElection, "leader-elect", false,
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
-	flag.StringVar(&clusterName, "cluster-name", "", "The name of the managed cluster.")
-	flag.StringVar(&spokeKubeconfig, "spoke-kubeconfig", "", "The kubeconfig to talk to the managed cluster, "+
+	flags.StringVar(&o.ClusterName, "cluster-name", "", "The name of the managed cluster.")
+	flags.StringVar(&o.SpokeKubeconfig, "spoke-kubeconfig", "", "The kubeconfig to talk to the managed cluster, "+
 		"will use the in-cluster client if not specified.")
-	flag.Var(
-		cliflag.NewMapStringBool(&featureGatesFlags),
+	flags.Var(
+		cliflag.NewMapStringBool(&o.FeatureGatesFlags),
 		"feature-gates",
 		"A set of key=value pairs that describe feature gates for alpha/experimental features. "+
 			"Options are:\n"+strings.Join(features.FeatureGates.KnownFeatures(), "\n"))
-	flag.BoolVar(&leaseHealthCheck, "lease-health-check", false, "Use lease to report health check.")
-	flag.Parse()
+	flags.BoolVar(&o.LeaseHealthCheck, "lease-health-check", false, "Use lease to report health check.")
+}
+
+// AgentOptions holds configuration for agent controller
+type AgentOptions struct {
+	MetricsAddr          string
+	EnableLeaderElection bool
+	ProbeAddr            string
+	FeatureGatesFlags    map[string]bool
+	ClusterName          string
+	SpokeKubeconfig      string
+	LeaseHealthCheck     bool
+}
+
+// NewAgentOptions returns an AgentOptions
+func NewAgentOptions() *AgentOptions {
+	return &AgentOptions{}
+}
+
+func (o *AgentOptions) Run() error {
+	logger := klog.Background()
+	klog.SetOutput(os.Stdout)
+	klog.InitFlags(flag.CommandLine)
 	ctrl.SetLogger(logger)
 
-	err := features.FeatureGates.SetFromMap(featureGatesFlags)
+	err := features.FeatureGates.SetFromMap(o.FeatureGatesFlags)
 	if err != nil {
 		klog.Fatalf("unable to set featuregates map: %v", err)
 	}
 
-	if len(clusterName) == 0 {
+	if len(o.ClusterName) == 0 {
 		klog.Fatal("missing --cluster-name")
 	}
 
 	var spokeCfg *rest.Config
-	if len(spokeKubeconfig) > 0 {
-		spokeCfg, err = clientcmd.BuildConfigFromFlags("", spokeKubeconfig)
+	if len(o.SpokeKubeconfig) > 0 {
+		spokeCfg, err = clientcmd.BuildConfigFromFlags("", o.SpokeKubeconfig)
 		if err != nil {
 			klog.Fatal("failed to build a spoke cluster client config from --spoke-kubeconfig")
 		}
@@ -99,15 +128,15 @@ func main() {
 
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme:                 scheme,
-		Metrics:                metricsserver.Options{BindAddress: metricsAddr},
-		HealthProbeBindAddress: probeAddr,
-		LeaderElection:         enableLeaderElection,
+		Metrics:                metricsserver.Options{BindAddress: o.MetricsAddr},
+		HealthProbeBindAddress: o.ProbeAddr,
+		LeaderElection:         o.EnableLeaderElection,
 		LeaderElectionID:       "managed-serviceaccount-addon-agent",
 		LeaderElectionConfig:   spokeCfg,
 		Cache: cache.Options{
 			// Only watch resources in the managed cluster namespace on the hub cluster.
 			DefaultNamespaces: map[string]cache.Config{
-				clusterName: {},
+				o.ClusterName: {},
 			},
 		},
 	})
@@ -189,7 +218,7 @@ func main() {
 		SpokeNamespace:             spokeNamespace,
 		SpokeClientConfig:          spokeCfg,
 		SpokeNativeClient:          spokeNativeClient,
-		ClusterName:                clusterName,
+		ClusterName:                o.ClusterName,
 		SpokeCache:                 spokeCache,
 		CreateTokenByDefaultSecret: !foundTokenRequest,
 	}).SetupWithManager(mgr); err != nil {
@@ -199,8 +228,8 @@ func main() {
 	ctx, cancel := context.WithCancel(ctrl.SetupSignalHandler())
 	defer cancel()
 
-	if leaseHealthCheck {
-		leaseUpdater, err := health.NewAddonHealthUpdater(mgr.GetConfig(), clusterName, spokeCfg, spokeNamespace)
+	if o.LeaseHealthCheck {
+		leaseUpdater, err := health.NewAddonHealthUpdater(mgr.GetConfig(), o.ClusterName, spokeCfg, spokeNamespace)
 		if err != nil {
 			klog.Fatalf("unable to create healthiness lease updater for controller %v", "ManagedServiceAccount")
 		}
@@ -221,6 +250,7 @@ func main() {
 		klog.Fatalf("unable to start controller manager: %v", err)
 	}
 
+	return nil
 }
 
 // serveHealthProbes serves health probes and configchecker.

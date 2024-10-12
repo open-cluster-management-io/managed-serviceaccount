@@ -63,13 +63,10 @@ test: manifests generate fmt vet ## Run tests.
 
 ##@ Build
 
-build: generate fmt vet build-manager build-agent
+build: generate fmt vet build-bin
 
-build-manager:
-	go build -a -o bin/manager cmd/manager/main.go
-
-build-agent:
-	go build -a -o bin/agent cmd/agent/main.go
+build-bin:
+	go build -a -o bin/msa cmd/main.go
 
 build-e2e:
 	go test -c -o bin/e2e ./e2e/
