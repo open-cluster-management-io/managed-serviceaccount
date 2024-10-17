@@ -20,7 +20,8 @@ spec:
           image: {{ .Values.image }}:{{ .Values.tag | default (print "v" .Chart.Version) }}
           imagePullPolicy: IfNotPresent
           command:
-            - /manager
+            - /msa
+            - manager
           args:
             {{- if gt (int .Values.replicas) 1 }}
             - --leader-elect=true

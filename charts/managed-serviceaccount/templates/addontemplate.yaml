@@ -65,7 +65,8 @@ spec:
                 - --kubeconfig={{ "{{" }}HUB_KUBECONFIG{{ "}}" }}  # escape double curly brackets, option 2
                 - --feature-gates=EphemeralIdentity=true
                 command:
-                - /agent
+                - /msa
+                - agent
                 image: {{ .Values.image }}:{{ .Values.tag | default (print "v" .Chart.Version) }}
                 imagePullPolicy: IfNotPresent
                 livenessProbe:

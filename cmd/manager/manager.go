@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package main
+package manager
 
 import (
 	"context"
@@ -25,8 +25,8 @@ import (
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
 	"github.com/pkg/errors"
-	_ "k8s.io/client-go/plugin/pkg/client/auth"
-
+	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -34,6 +34,7 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/kubernetes"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	_ "k8s.io/client-go/plugin/pkg/client/auth"
 	cliflag "k8s.io/component-base/cli/flag"
 	"k8s.io/klog/v2"
 	"open-cluster-management.io/addon-framework/pkg/addonfactory"
@@ -41,14 +42,15 @@ import (
 	"open-cluster-management.io/addon-framework/pkg/agent"
 	"open-cluster-management.io/addon-framework/pkg/utils"
 	addonclient "open-cluster-management.io/api/client/addon/clientset/versioned"
+	ctrl "sigs.k8s.io/controller-runtime"
+	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
+
 	authv1beta1 "open-cluster-management.io/managed-serviceaccount/apis/authentication/v1beta1"
 	"open-cluster-management.io/managed-serviceaccount/pkg/addon/commoncontroller"
 	"open-cluster-management.io/managed-serviceaccount/pkg/addon/manager"
 	"open-cluster-management.io/managed-serviceaccount/pkg/common"
 	"open-cluster-management.io/managed-serviceaccount/pkg/features"
 	"open-cluster-management.io/managed-serviceaccount/pkg/util"
-	ctrl "sigs.k8s.io/controller-runtime"
-	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	//+kubebuilder:scaffold:imports
 )
 
@@ -63,43 +65,71 @@ func init() {
 	//+kubebuilder:scaffold:scheme
 }
 
-func main() {
-	var metricsAddr string
-	var enableLeaderElection bool
-	var probeAddr string
-	var addonAgentImageName string
-	var agentInstallAll bool
-	var imagePullSecretName string
-	var featureGatesFlags map[string]bool
+func NewManager() *cobra.Command {
+	managerOpts := NewHubManagerOptions()
 
-	logger := klog.Background()
-	klog.SetOutput(os.Stdout)
-	klog.InitFlags(flag.CommandLine)
-	flag.StringVar(&metricsAddr, "metrics-bind-address", ":38080", "The address the metric endpoint binds to.")
-	flag.StringVar(&probeAddr, "health-probe-bind-address", ":38081", "The address the probe endpoint binds to.")
-	flag.StringVar(&addonAgentImageName, "agent-image-name", "quay.io/open-cluster-management/managed-serviceaccount:latest",
+	cmd := &cobra.Command{
+		Use:   "manager",
+		Short: "Start the managed service account addon manager",
+		Run: func(cmd *cobra.Command, args []string) {
+			if err := managerOpts.Run(); err != nil {
+				klog.Fatal(err)
+			}
+		},
+	}
+
+	flags := cmd.Flags()
+	managerOpts.AddFlags(flags)
+
+	return cmd
+}
+
+func (o *HubManagerOptions) AddFlags(flags *pflag.FlagSet) {
+	flags.StringVar(&o.MetricsAddr, "metrics-bind-address", ":38080", "The address the metric endpoint binds to.")
+	flags.StringVar(&o.ProbeAddr, "health-probe-bind-address", ":38081", "The address the probe endpoint binds to.")
+	flags.StringVar(&o.AddonAgentImageName, "agent-image-name", "quay.io/open-cluster-management/managed-serviceaccount:latest",
 		"The image name of the addon agent")
-	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
+	flags.BoolVar(&o.EnableLeaderElection, "leader-elect", false,
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
-	flag.BoolVar(
-		&agentInstallAll, "agent-install-all", false,
+	flags.BoolVar(
+		&o.AgentInstallAll, "agent-install-all", false,
 		"Configure the install strategy of agent on managed clusters. "+
 			"Enabling this will automatically install agent on all managed cluster.")
-	flag.Var(
-		cliflag.NewMapStringBool(&featureGatesFlags),
+	flags.Var(
+		cliflag.NewMapStringBool(&o.FeatureGatesFlags),
 		"feature-gates",
 		"A set of key=value pairs that describe feature gates for alpha/experimental features. "+
 			"Options are:\n"+strings.Join(features.FeatureGates.KnownFeatures(), "\n"))
-	flag.StringVar(&imagePullSecretName, "agent-image-pull-secret", "",
+	flags.StringVar(&o.ImagePullSecretName, "agent-image-pull-secret", "",
 		"The image pull secret that addon agent will use. "+
 			"When specified, the content of image pull secret in the manager namespace on hub will be copied to the agent namespace on the managed cluster."+
 			"This can also be configured with environment variable AGENT_IMAGE_PULL_SECRET.")
+}
 
-	flag.Parse()
+// HubManagerOptions holds configuration for hub manager controller
+type HubManagerOptions struct {
+	MetricsAddr          string
+	EnableLeaderElection bool
+	ProbeAddr            string
+	AddonAgentImageName  string
+	AgentInstallAll      bool
+	ImagePullSecretName  string
+	FeatureGatesFlags    map[string]bool
+}
 
+// NewHubManagerOptions returns a HubManagerOptions
+func NewHubManagerOptions() *HubManagerOptions {
+	return &HubManagerOptions{}
+}
+
+func (o *HubManagerOptions) Run() error {
+	logger := klog.Background()
+	klog.SetOutput(os.Stdout)
+	klog.InitFlags(flag.CommandLine)
 	ctrl.SetLogger(logger)
-	err := features.FeatureGates.SetFromMap(featureGatesFlags)
+
+	err := features.FeatureGates.SetFromMap(o.FeatureGatesFlags)
 	if err != nil {
 		setupLog.Error(err, "unable to set featuregates map")
 		os.Exit(1)
@@ -107,9 +137,9 @@ func main() {
 
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme:                 scheme,
-		Metrics:                metricsserver.Options{BindAddress: metricsAddr},
-		HealthProbeBindAddress: probeAddr,
-		LeaderElection:         enableLeaderElection,
+		Metrics:                metricsserver.Options{BindAddress: o.MetricsAddr},
+		HealthProbeBindAddress: o.ProbeAddr,
+		LeaderElection:         o.EnableLeaderElection,
 		LeaderElectionID:       "managed-serviceaccount-addon-manager",
 	})
 	if err != nil {
@@ -154,15 +184,15 @@ func main() {
 		hubNamespace = inClusterNamespace
 	}
 
-	if len(imagePullSecretName) == 0 {
-		imagePullSecretName = os.Getenv("AGENT_IMAGE_PULL_SECRET")
+	if len(o.ImagePullSecretName) == 0 {
+		o.ImagePullSecretName = os.Getenv("AGENT_IMAGE_PULL_SECRET")
 	}
 
 	imagePullSecret := &corev1.Secret{}
-	if len(imagePullSecretName) != 0 {
+	if len(o.ImagePullSecretName) != 0 {
 		imagePullSecret, err = nativeClient.CoreV1().Secrets(hubNamespace).Get(
 			context.TODO(),
-			imagePullSecretName,
+			o.ImagePullSecretName,
 			metav1.GetOptions{},
 		)
 		if err != nil {
@@ -178,11 +208,11 @@ func main() {
 	agentFactory := addonfactory.NewAgentAddonFactory(common.AddonName, manager.FS, "manifests/templates").
 		WithConfigGVRs(utils.AddOnDeploymentConfigGVR).
 		WithGetValuesFuncs(
-			manager.GetDefaultValues(addonAgentImageName, imagePullSecret),
+			manager.GetDefaultValues(o.AddonAgentImageName, imagePullSecret),
 			addonfactory.GetAgentImageValues(
 				utils.NewAddOnDeploymentConfigGetter(addonClient),
 				"Image",
-				addonAgentImageName,
+				o.AddonAgentImageName,
 			),
 			addonfactory.GetAddOnDeploymentConfigValues(
 				utils.NewAddOnDeploymentConfigGetter(addonClient),
@@ -192,7 +222,7 @@ func main() {
 		WithAgentRegistrationOption(manager.NewRegistrationOption(nativeClient)).
 		WithAgentDeployTriggerClusterFilter(utils.ClusterImageRegistriesAnnotationChanged)
 
-	if agentInstallAll {
+	if o.AgentInstallAll {
 		agentFactory.WithInstallStrategy(agent.InstallAllStrategy(common.AddonAgentInstallNamespace))
 	}
 
@@ -231,4 +261,5 @@ func main() {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)
 	}
+	return nil
 }
