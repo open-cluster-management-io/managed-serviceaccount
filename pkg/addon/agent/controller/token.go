@@ -58,8 +58,8 @@ func (r *TokenReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			source.Kind(
 				r.SpokeCache,
 				&corev1.ServiceAccount{},
+				event.NewServiceAccountEventHandler[*corev1.ServiceAccount](r.ClusterName),
 			),
-			event.NewServiceAccountEventHandler(r.ClusterName),
 		).
 		Complete(r)
 }

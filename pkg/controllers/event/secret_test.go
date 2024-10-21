@@ -9,6 +9,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/util/workqueue"
 	"open-cluster-management.io/managed-serviceaccount/pkg/common"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllertest"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
@@ -94,7 +95,7 @@ func TestSecretEventHandler(t *testing.T) {
 	}
 }
 
-func processEvent(handler handler.EventHandler, evt interface{}) workqueue.RateLimitingInterface {
+func processEvent(handler handler.TypedEventHandler[client.Object], evt interface{}) workqueue.RateLimitingInterface {
 	q := &controllertest.Queue{Interface: workqueue.New()}
 	switch e := evt.(type) {
 	case *event.CreateEvent:
