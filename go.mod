@@ -2,8 +2,6 @@ module open-cluster-management.io/managed-serviceaccount
 
 go 1.22.0
 
-toolchain go1.23.1
-
 require (
 	github.com/onsi/ginkgo/v2 v2.17.1
 	github.com/onsi/gomega v1.32.0

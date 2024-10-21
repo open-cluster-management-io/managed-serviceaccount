@@ -55,7 +55,7 @@ func (r *TokenReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			event.NewSecretEventHandler(),
 		).
 		WatchesRawSource(
-			source.Kind[*corev1.ServiceAccount](
+			source.Kind(
 				r.SpokeCache,
 				&corev1.ServiceAccount{},
 				event.NewServiceAccountEventHandler[*corev1.ServiceAccount](r.ClusterName),

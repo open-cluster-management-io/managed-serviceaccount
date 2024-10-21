@@ -10,6 +10,15 @@ spec:
   addOnMeta:
     displayName: managed-serviceaccount
     description: managed-serviceaccount
+{{- if .Values.agentInstallAll }}
+  installStrategy:
+    placements:
+    - name: global
+      namespace: {{ .Release.Namespace }}
+      rolloutStrategy:
+        type: All
+    type: Placements
+{{- end }}
   supportedConfigs:
   - group: addon.open-cluster-management.io
     resource: addondeploymentconfigs
