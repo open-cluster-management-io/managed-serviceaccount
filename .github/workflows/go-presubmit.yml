@@ -45,11 +45,12 @@ jobs:
       - name: report coverage
         uses: codecov/codecov-action@v4
         with:
+          token: ${{ secrets.CODECOV_UPLOAD_TOKEN }}
           files: ./cover.out
           flags: unit
           name: unit
           verbose: true
-          fail_ci_if_error: false
+          fail_ci_if_error: true
 
   integration:
     name: integration
