@@ -7,6 +7,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"open-cluster-management.io/managed-serviceaccount/pkg/common"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 )
 
@@ -79,7 +80,7 @@ func TestServiceAccountEventHandler(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			q := processEvent(NewServiceAccountEventHandler("cluster1"), c.event)
+			q := processEvent(NewServiceAccountEventHandler[client.Object]("cluster1"), c.event)
 			if c.queued {
 				assert.Equal(t, 1, q.Len(), "expect event queued")
 			} else {
