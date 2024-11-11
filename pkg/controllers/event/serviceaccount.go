@@ -7,59 +7,51 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/util/workqueue"
 	"open-cluster-management.io/managed-serviceaccount/pkg/common"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
-var _ handler.EventHandler = &serviceAccountEventHandler{}
+var _ handler.TypedEventHandler[*corev1.ServiceAccount] = &serviceAccountEventHandler[*corev1.ServiceAccount]{}
 
-func NewServiceAccountEventHandler(clusterName string) handler.EventHandler {
-	return serviceAccountEventHandler{
+func NewServiceAccountEventHandler[T client.Object](clusterName string) serviceAccountEventHandler[T] {
+	return serviceAccountEventHandler[T]{
 		clusterName: clusterName,
 	}
 }
 
-type serviceAccountEventHandler struct {
+type serviceAccountEventHandler[T client.Object] struct {
 	clusterName string
 }
 
-func (s serviceAccountEventHandler) Create(ctx context.Context, event event.CreateEvent,
+func (s serviceAccountEventHandler[T]) Create(ctx context.Context, event event.TypedCreateEvent[T],
 	q workqueue.RateLimitingInterface) {
-	serviceAccount, ok := event.Object.(*corev1.ServiceAccount)
-	if ok {
-		s.process(serviceAccount, q)
-	}
+	s.process(event.Object.GetLabels(), event.Object.GetName(), q)
 }
 
-func (s serviceAccountEventHandler) Update(ctx context.Context, event event.UpdateEvent,
+func (s serviceAccountEventHandler[T]) Update(ctx context.Context, event event.TypedUpdateEvent[T],
 	q workqueue.RateLimitingInterface) {
 }
 
-func (s serviceAccountEventHandler) Delete(ctx context.Context, event event.DeleteEvent,
+func (s serviceAccountEventHandler[T]) Delete(ctx context.Context, event event.TypedDeleteEvent[T],
 	q workqueue.RateLimitingInterface) {
-	serviceAccount, ok := event.Object.(*corev1.ServiceAccount)
-	if ok {
-		s.process(serviceAccount, q)
-	}
+	s.process(event.Object.GetLabels(), event.Object.GetName(), q)
 }
 
-func (s serviceAccountEventHandler) Generic(ctx context.Context, event event.GenericEvent,
+func (s serviceAccountEventHandler[T]) Generic(ctx context.Context, event event.TypedGenericEvent[T],
 	q workqueue.RateLimitingInterface) {
-	serviceAccount, ok := event.Object.(*corev1.ServiceAccount)
-	if ok {
-		s.process(serviceAccount, q)
-	}
+	s.process(event.Object.GetLabels(), event.Object.GetName(), q)
 }
 
-func (s serviceAccountEventHandler) process(serviceAccount *corev1.ServiceAccount, q workqueue.RateLimitingInterface) {
-	if serviceAccount.Labels[common.LabelKeyIsManagedServiceAccount] != "true" {
+func (s serviceAccountEventHandler[T]) process(labels map[string]string, name string, q workqueue.RateLimitingInterface) {
+	if labels[common.LabelKeyIsManagedServiceAccount] != "true" {
 		return
 	}
 	q.Add(reconcile.Request{
 		NamespacedName: types.NamespacedName{
 			Namespace: s.clusterName,
-			Name:      serviceAccount.Name,
+			Name:      name,
 		},
 	})
 }

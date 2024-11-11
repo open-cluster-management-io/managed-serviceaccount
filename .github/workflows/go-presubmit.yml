@@ -13,7 +13,7 @@ on:
 
 env:
   # Common versions
-  GO_VERSION: '1.21'
+  GO_VERSION: '1.22'
   GO_REQUIRED_MIN_VERSION: ''
 
 jobs:
@@ -24,7 +24,7 @@ jobs:
       - name: checkout code
         uses: actions/checkout@v4
       - name: install Go
-        uses: actions/setup-go@v2
+        uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
       - name: build
@@ -37,19 +37,20 @@ jobs:
       - name: checkout code
         uses: actions/checkout@v4
       - name: install Go
-        uses: actions/setup-go@v2
+        uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
       - name: unit
         run: make test
       - name: report coverage
-        uses: codecov/codecov-action@v3
+        uses: codecov/codecov-action@v4
         with:
+          token: ${{ secrets.CODECOV_UPLOAD_TOKEN }}
           files: ./cover.out
           flags: unit
           name: unit
           verbose: true
-          fail_ci_if_error: false
+          fail_ci_if_error: true
 
   integration:
     name: integration
@@ -58,7 +59,7 @@ jobs:
       - name: checkout code
         uses: actions/checkout@v4
       - name: install Go
-        uses: actions/setup-go@v2
+        uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
       - name: integration
@@ -71,13 +72,13 @@ jobs:
       - name: checkout code
         uses: actions/checkout@v4
       - name: install Go
-        uses: actions/setup-go@v2
+        uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
       - name: Install clusteradm
         run: curl -L https://raw.githubusercontent.com/open-cluster-management-io/clusteradm/main/install.sh | bash
       - name: Create k8s Kind Cluster
-        uses: helm/kind-action@v1.2.0
+        uses: helm/kind-action@v1.10.0
       - name: Prepare OCM testing environment
         run: |
           clusteradm init --output-join-command-file join.sh --wait
@@ -105,7 +106,7 @@ jobs:
       - name: checkout code
         uses: actions/checkout@v4
       - name: install Go
-        uses: actions/setup-go@v2
+        uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
       - name: Install clusteradm
@@ -114,7 +115,7 @@ jobs:
           cd clusteradm
           make build
       - name: Create k8s Kind Cluster
-        uses: helm/kind-action@v1.2.0
+        uses: helm/kind-action@v1.10.0
       - name: Prepare OCM testing environment
         run: |
           clusteradm init --bundle-version='latest' --output-join-command-file join.sh --wait

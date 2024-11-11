@@ -9,7 +9,7 @@ on:
 
 env:
   # Common versions
-  GO_VERSION: '1.21'
+  GO_VERSION: '1.22'
   GO_REQUIRED_MIN_VERSION: ''
   GOPATH: '/home/runner/work/managed-serviceaccount/managed-serviceaccount/go'
 
@@ -31,13 +31,13 @@ jobs:
           fetch-depth: 1
           path: go/src/open-cluster-management.io/managed-serviceaccount
       - name: install Go
-        uses: actions/setup-go@v2
+        uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
       - name: install imagebuilder
         run: go install github.com/openshift/imagebuilder/cmd/imagebuilder@v1.2.3
       - name: pull base image
-        run: docker pull registry.access.redhat.com/ubi8/ubi-minimal:latest --platform=linux/${{ matrix.arch }}
+        run: docker pull registry.access.redhat.com/ubi9/ubi-minimal:latest --platform=linux/${{ matrix.arch }}
       - name: images
         run: |
           IMAGE_TAG=latest-${{ matrix.arch }} \
