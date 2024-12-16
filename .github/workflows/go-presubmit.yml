@@ -78,7 +78,7 @@ jobs:
       - name: Install clusteradm
         run: curl -L https://raw.githubusercontent.com/open-cluster-management-io/clusteradm/main/install.sh | bash
       - name: Create k8s Kind Cluster
-        uses: helm/kind-action@v1.10.0
+        uses: helm/kind-action@v1.11.0
       - name: Prepare OCM testing environment
         run: |
           clusteradm init --output-join-command-file join.sh --wait
@@ -115,7 +115,7 @@ jobs:
           cd clusteradm
           make build
       - name: Create k8s Kind Cluster
-        uses: helm/kind-action@v1.10.0
+        uses: helm/kind-action@v1.11.0
       - name: Prepare OCM testing environment
         run: |
           clusteradm init --bundle-version='latest' --output-join-command-file join.sh --wait
