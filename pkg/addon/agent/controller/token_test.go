@@ -19,12 +19,14 @@ import (
 	"k8s.io/client-go/rest"
 	clienttesting "k8s.io/client-go/testing"
 	"k8s.io/klog/v2"
-	authv1beta1 "open-cluster-management.io/managed-serviceaccount/apis/authentication/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+
+	authv1beta1 "open-cluster-management.io/managed-serviceaccount/apis/authentication/v1beta1"
+	"open-cluster-management.io/managed-serviceaccount/pkg/common"
 )
 
 func TestReconcile(t *testing.T) {
@@ -51,9 +53,33 @@ func TestReconcile(t *testing.T) {
 		validateFunc           func(t *testing.T, hubClient client.Client, actions []clienttesting.Action)
 	}{
 		{
-			name: "not found",
+			name: "msa and sa both are not found",
 			validateFunc: func(t *testing.T, hubClient client.Client, actions []clienttesting.Action) {
 				assertActions(t, actions,
+					"get", // get service account
+				)
+			},
+		},
+		{
+			name:           "msa not found, sa is not created by msa agent, skip delete",
+			spokeNamespace: clusterName,
+			sa:             newServiceAccount(clusterName, msaName),
+			validateFunc: func(t *testing.T, hubClient client.Client, actions []clienttesting.Action) {
+				assertActions(t, actions,
+					"get", // get service account
+				)
+			},
+		},
+		{
+			name:           "msa not found, sa is created by msa agent, delete",
+			spokeNamespace: clusterName,
+			sa: newServiceAccountWithLabels(clusterName, msaName,
+				map[string]string{
+					common.LabelKeyIsManagedServiceAccount: "true",
+				}),
+			validateFunc: func(t *testing.T, hubClient client.Client, actions []clienttesting.Action) {
+				assertActions(t, actions,
+					"get",    // get service account
 					"delete", // delete service account
 				)
 			},
@@ -438,6 +464,16 @@ func newServiceAccount(namespace, name string) *corev1.ServiceAccount {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: namespace,
+		},
+	}
+}
+
+func newServiceAccountWithLabels(namespace, name string, labels map[string]string) *corev1.ServiceAccount {
+	return &corev1.ServiceAccount{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+			Labels:    labels,
 		},
 	}
 }

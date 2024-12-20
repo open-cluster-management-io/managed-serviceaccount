@@ -13,7 +13,8 @@ else
 GOBIN=$(shell go env GOBIN)
 endif
 
-export CGO_ENABLED  = 1
+export DOCKER_BUILDER ?= docker
+export CGO_ENABLED = 1
 export GOFLAGS ?=
 
 # Setting SHELL to bash allows bash commands to be executed by recipes.
@@ -113,7 +114,10 @@ rm -rf $$TMP_DIR ;\
 endef
 
 images:
-	docker build -t ${IMG_REGISTRY}/managed-serviceaccount:${IMAGE_TAG} -f Dockerfile .
+	$(DOCKER_BUILDER) build -t ${IMG_REGISTRY}/managed-serviceaccount:${IMAGE_TAG} -f Dockerfile .
+
+images-amd64:
+	$(DOCKER_BUILDER) build --platform linux/amd64 -t ${IMG_REGISTRY}/managed-serviceaccount:${IMAGE_TAG} -f Dockerfile .
 
 test-integration:
 	@echo "TODO: Run integration test"
