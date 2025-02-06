@@ -1,9 +1,20 @@
-FROM brew.registry.redhat.io/rh-osbs/openshift-golang-builder:rhel_8_1.23 AS builder
+FROM brew.registry.redhat.io/rh-osbs/openshift-golang-builder:rhel_9_1.23 AS builder
 WORKDIR /go/src/github.com/open-cluster-management.io/managed-serviceaccount
 COPY . .
 RUN go env
-RUN go mod tidy && go mod vendor
-RUN make build-bin
+RUN GOFLAGS='-mod=readonly' make build-bin
 
 FROM registry.access.redhat.com/ubi9/ubi-minimal:latest
+LABEL \
+    name="managed-serviceaccount" \
+    com.redhat.component="managed-serviceaccount" \
+    description="Managed ServiceAccount is an OCM addon developed for synchronizing ServiceAccount to the \
+    managed clusters and collecting the tokens from these local service accounts as secret resources back \
+    to the hub cluster." \
+    io.k8s.description="Managed ServiceAccount is an OCM addon developed for synchronizing ServiceAccount to the \
+    managed clusters and collecting the tokens from these local service accounts as secret resources back \
+    to the hub cluster." \
+    summary="An OCM addon to collect mangaged serviceaccount tokens to the hub cluster" \
+    io.k8s.display-name="Red Hat Advanced Cluster Management Managed ServiceAccount" \
+    io.openshift.tags="mce acm ocm managed-serviceaccount"
 COPY --from=builder /go/src/github.com/open-cluster-management.io/managed-serviceaccount/bin/msa /
