@@ -1,10 +1,25 @@
 {
     "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-    "dockerfile": {
-        "fileMatch": [
-            "Dockerfile.rhtap"
-        ]
-    },
+    "packageRules": [
+        {
+            "matchManagers": [
+                "dockerfile"
+            ],
+            "matchFileNames": [
+                "Dockerfile"
+            ],
+            "enabled": false
+        },
+        {
+            "matchManagers": [
+                "dockerfile"
+            ],
+            "matchFileNames": [
+                "Dockerfile.rhtap"
+            ],
+            "enabled": true
+        }
+    ],
     "addLabels": [
         "ok-to-test"
     ],
