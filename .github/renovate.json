@@ -1,5 +1,9 @@
 {
     "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+    "baseBranches": [
+        "main",
+        "/^backplane-.*/"
+    ],
     "packageRules": [
         {
             "matchManagers": [
@@ -15,6 +19,22 @@
                 "dockerfile"
             ],
             "matchFileNames": [
+                "Dockerfile.rhtap"
+            ],
+            "enabled": true
+        },
+        {
+            "matchBaseBranches": [
+                "backplane-2.8"
+            ],
+            "enabled": false
+        },
+        {
+            "matchBaseBranches": [
+                "main"
+            ],
+            "matchFileNames": [
+                ".tekton/**",
                 "Dockerfile.rhtap"
             ],
             "enabled": true
