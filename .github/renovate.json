@@ -2,7 +2,7 @@
     "$schema": "https://docs.renovatebot.com/renovate-schema.json",
     "baseBranches": [
         "main",
-        "/^backplane-.*/"
+        "/^backplane-2\\.(5|6|7)$/"
     ],
     "packageRules": [
         {
@@ -25,12 +25,6 @@
         },
         {
             "matchBaseBranches": [
-                "backplane-2.8"
-            ],
-            "enabled": false
-        },
-        {
-            "matchBaseBranches": [
                 "main"
             ],
             "matchFileNames": [
@@ -40,6 +34,7 @@
             "enabled": true
         }
     ],
+    "rebaseWhen": "behind-base-branch",
     "addLabels": [
         "ok-to-test"
     ],
