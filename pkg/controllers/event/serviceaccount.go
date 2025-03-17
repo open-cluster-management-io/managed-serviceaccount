@@ -13,7 +13,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
-var _ handler.TypedEventHandler[*corev1.ServiceAccount] = &serviceAccountEventHandler[*corev1.ServiceAccount]{}
+var _ handler.TypedEventHandler[*corev1.ServiceAccount, reconcile.Request] = &serviceAccountEventHandler[*corev1.ServiceAccount]{}
 
 func NewServiceAccountEventHandler[T client.Object](clusterName string) serviceAccountEventHandler[T] {
 	return serviceAccountEventHandler[T]{
@@ -26,25 +26,25 @@ type serviceAccountEventHandler[T client.Object] struct {
 }
 
 func (s serviceAccountEventHandler[T]) Create(ctx context.Context, event event.TypedCreateEvent[T],
-	q workqueue.RateLimitingInterface) {
+	q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 	s.process(event.Object.GetLabels(), event.Object.GetName(), q)
 }
 
 func (s serviceAccountEventHandler[T]) Update(ctx context.Context, event event.TypedUpdateEvent[T],
-	q workqueue.RateLimitingInterface) {
+	q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 }
 
 func (s serviceAccountEventHandler[T]) Delete(ctx context.Context, event event.TypedDeleteEvent[T],
-	q workqueue.RateLimitingInterface) {
+	q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 	s.process(event.Object.GetLabels(), event.Object.GetName(), q)
 }
 
 func (s serviceAccountEventHandler[T]) Generic(ctx context.Context, event event.TypedGenericEvent[T],
-	q workqueue.RateLimitingInterface) {
+	q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 	s.process(event.Object.GetLabels(), event.Object.GetName(), q)
 }
 
-func (s serviceAccountEventHandler[T]) process(labels map[string]string, name string, q workqueue.RateLimitingInterface) {
+func (s serviceAccountEventHandler[T]) process(labels map[string]string, name string, q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 	if labels[common.LabelKeyIsManagedServiceAccount] != "true" {
 		return
 	}
