@@ -49,7 +49,6 @@ type TokenReconciler struct {
 // SetupWithManager sets up the controller with the Manager.
 func (r *TokenReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		Named("managed-serviceaccount-addon-agent-controller").
 		For(&authv1beta1.ManagedServiceAccount{}).
 		Watches(
 			&corev1.Secret{},
