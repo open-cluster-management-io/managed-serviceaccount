@@ -50,7 +50,7 @@ type TokenReconciler struct {
 func (r *TokenReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&authv1beta1.ManagedServiceAccount{}).
-		Named("managed-serviceaccount-addon-agent-controller").
+		Named("managed_serviceaccount_agent_token_controller").
 		Watches(
 			&corev1.Secret{},
 			event.NewSecretEventHandler(),

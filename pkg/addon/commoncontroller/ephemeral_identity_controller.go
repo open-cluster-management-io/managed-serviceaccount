@@ -38,6 +38,7 @@ type EphemeralIdentityReconciler struct {
 func (r *EphemeralIdentityReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&authv1beta1.ManagedServiceAccount{}).
+		Named("managed_serviceaccount_ephemeral_identity_controller").
 		Watches(
 			&authv1beta1.ManagedServiceAccount{},
 			&handler.EnqueueRequestForObject{},
