@@ -21,35 +21,35 @@ func NewSecretEventHandler() handler.EventHandler {
 type secretEventHandler struct {
 }
 
-func (s secretEventHandler) Create(ctx context.Context, event event.CreateEvent, q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
+func (s secretEventHandler) Create(ctx context.Context, event event.CreateEvent, q workqueue.RateLimitingInterface) {
 	secret, ok := event.Object.(*corev1.Secret)
 	if ok {
 		s.process(secret, q)
 	}
 }
 
-func (s secretEventHandler) Update(ctx context.Context, event event.UpdateEvent, q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
+func (s secretEventHandler) Update(ctx context.Context, event event.UpdateEvent, q workqueue.RateLimitingInterface) {
 	secret, ok := event.ObjectNew.(*corev1.Secret)
 	if ok {
 		s.process(secret, q)
 	}
 }
 
-func (s secretEventHandler) Delete(ctx context.Context, event event.DeleteEvent, q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
+func (s secretEventHandler) Delete(ctx context.Context, event event.DeleteEvent, q workqueue.RateLimitingInterface) {
 	secret, ok := event.Object.(*corev1.Secret)
 	if ok {
 		s.process(secret, q)
 	}
 }
 
-func (s secretEventHandler) Generic(ctx context.Context, event event.GenericEvent, q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
+func (s secretEventHandler) Generic(ctx context.Context, event event.GenericEvent, q workqueue.RateLimitingInterface) {
 	secret, ok := event.Object.(*corev1.Secret)
 	if ok {
 		s.process(secret, q)
 	}
 }
 
-func (s secretEventHandler) process(secret *corev1.Secret, q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
+func (s secretEventHandler) process(secret *corev1.Secret, q workqueue.RateLimitingInterface) {
 	if secret.Labels[common.LabelKeyIsManagedServiceAccount] != "true" {
 		return
 	}
