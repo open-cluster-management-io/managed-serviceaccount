@@ -13,6 +13,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllertest"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
 func TestSecretEventHandler(t *testing.T) {
@@ -95,8 +96,8 @@ func TestSecretEventHandler(t *testing.T) {
 	}
 }
 
-func processEvent(handler handler.TypedEventHandler[client.Object], evt interface{}) workqueue.RateLimitingInterface {
-	q := &controllertest.Queue{Interface: workqueue.New()}
+func processEvent(handler handler.TypedEventHandler[client.Object, reconcile.Request], evt interface{}) workqueue.TypedRateLimitingInterface[reconcile.Request] {
+	q := &controllertest.TypedQueue[reconcile.Request]{TypedInterface: workqueue.NewTyped[reconcile.Request]()}
 	switch e := evt.(type) {
 	case *event.CreateEvent:
 		handler.Create(context.TODO(), *e, q)
