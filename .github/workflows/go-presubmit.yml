@@ -13,8 +13,8 @@ on:
 
 env:
   # Common versions
-  GO_VERSION: '1.23'
-  GO_REQUIRED_MIN_VERSION: ''
+  GO_VERSION: "1.23"
+  GO_REQUIRED_MIN_VERSION: ""
 
 jobs:
   build:

@@ -37,5 +37,7 @@ func newCommand() *cobra.Command {
 	cmd.AddCommand(hub.NewManager())
 	cmd.AddCommand(agent.NewAgent())
 
+	fmt.Println("Hello, World!")
+
 	return cmd
 }
