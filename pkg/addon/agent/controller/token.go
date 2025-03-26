@@ -50,6 +50,7 @@ type TokenReconciler struct {
 func (r *TokenReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&authv1beta1.ManagedServiceAccount{}).
+		Named("managed_serviceaccount_agent_token_controller").
 		Watches(
 			&corev1.Secret{},
 			event.NewSecretEventHandler(),
@@ -75,15 +76,33 @@ func (r *TokenReconciler) Reconcile(ctx context.Context, request reconcile.Reque
 			return reconcile.Result{}, errors.Wrapf(err, "fail to get managed serviceaccount")
 		}
 
-		sai := r.SpokeNativeClient.CoreV1().ServiceAccounts(r.SpokeNamespace)
-		if err := sai.Delete(ctx, request.Name, metav1.DeleteOptions{}); err != nil {
+		saclient := r.SpokeNativeClient.CoreV1().ServiceAccounts(r.SpokeNamespace)
+		sa, err := saclient.Get(ctx, request.Name, metav1.GetOptions{})
+		if err != nil {
+			if !apierrors.IsNotFound(err) {
+				// fail to get related serviceaccount, requeue
+				return reconcile.Result{}, errors.Wrapf(err, "fail to get related serviceaccount")
+			}
+
+			logger.Info("Both ManagedServiceAccount and related ServiceAccount does not exist")
+			return reconcile.Result{}, nil
+		}
+
+		// check if the serviceacount is managed by the agent, if not, return
+		if sa.Labels[common.LabelKeyIsManagedServiceAccount] != "true" {
+
+			logger.Info("Related ServiceAccount is not managed by the agent, skip deletion")
+			return reconcile.Result{}, nil
+		}
+
+		if err := saclient.Delete(ctx, request.Name, metav1.DeleteOptions{}); err != nil {
 			if !apierrors.IsNotFound(err) {
 				// fail to delete related serviceaccount, requeue
 				return reconcile.Result{}, errors.Wrapf(err, "fail to delete related serviceaccount")
 			}
 		}
 
-		logger.Info("Both ManagedServiceAccount and related ServiceAccount does not exist")
+		logger.Info("Delete related ServiceAccount successfully")
 		return reconcile.Result{}, nil
 	}
 
