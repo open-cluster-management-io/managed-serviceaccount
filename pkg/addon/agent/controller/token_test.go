@@ -2,7 +2,10 @@ package controller
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -15,6 +18,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apiserver/pkg/authentication/serviceaccount"
 	fakekube "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/rest"
 	clienttesting "k8s.io/client-go/testing"
@@ -132,19 +136,20 @@ func TestReconcile(t *testing.T) {
 			},
 		},
 		{
-			name:   "token exists",
-			sa:     newServiceAccount(clusterName, msaName),
-			secret: newSecret(clusterName, msaName, token1, ca1),
+			name:           "token exists",
+			spokeNamespace: clusterName,
+			sa:             newServiceAccount(clusterName, msaName),
+			secret:         newSecret(clusterName, msaName, newFakeToken(clusterName, msaName), ca1),
 			msa: newManagedServiceAccount(clusterName, msaName).
 				withRotationValidity(500*time.Second).
 				withTokenSecretRef(msaName, now.Add(300*time.Second), now).
 				build(),
-			newToken: token1,
+			newToken: newFakeToken(clusterName, msaName),
 			validateFunc: func(t *testing.T, hubClient client.Client, actions []clienttesting.Action) {
 				assertActions(t, actions, "create", // create serviceaccount
 					"create", // create tokenreview
 				)
-				assertToken(t, hubClient, clusterName, msaName, token1, ca1)
+				assertToken(t, hubClient, clusterName, msaName, newFakeToken(clusterName, msaName), ca1)
 				assertMSAConditions(t, hubClient, clusterName, msaName, []metav1.Condition{
 					{
 						Type:   authv1beta1.ConditionTypeTokenReported,
@@ -183,9 +188,10 @@ func TestReconcile(t *testing.T) {
 			},
 		},
 		{
-			name:   "refresh expiring token",
-			sa:     newServiceAccount(clusterName, msaName),
-			secret: newSecret(clusterName, msaName, token1, ca1),
+			name:           "refresh expiring token",
+			spokeNamespace: clusterName,
+			sa:             newServiceAccount(clusterName, msaName),
+			secret:         newSecret(clusterName, msaName, newFakeToken(clusterName, msaName), ca1),
 			msa: newManagedServiceAccount(clusterName, msaName).
 				withRotationValidity(500*time.Second).
 				withTokenSecretRef(msaName, now.Add(10*time.Second), now.Add(-100*time.Second)).
@@ -205,9 +211,10 @@ func TestReconcile(t *testing.T) {
 			},
 		},
 		{
-			name:   "refresh invalid token",
-			sa:     newServiceAccount(clusterName, msaName),
-			secret: newSecret(clusterName, msaName, token2, ca2),
+			name:           "refresh invalid token",
+			spokeNamespace: clusterName,
+			sa:             newServiceAccount(clusterName, msaName),
+			secret:         newSecret(clusterName, msaName, newFakeToken(clusterName, msaName), ca2),
 			msa: newManagedServiceAccount(clusterName, msaName).
 				withRotationValidity(500*time.Second).
 				withTokenSecretRef(msaName, now.Add(300*time.Second), now).
@@ -229,9 +236,10 @@ func TestReconcile(t *testing.T) {
 			},
 		},
 		{
-			name: "refreshing token will preserve object metadata (annotations/labels)",
-			sa:   newServiceAccount(clusterName, msaName),
-			secret: newSecret(clusterName, msaName, token2, ca2, func(secret *corev1.Secret) {
+			name:           "refreshing token will preserve object metadata (annotations/labels)",
+			sa:             newServiceAccount(clusterName, msaName),
+			spokeNamespace: clusterName,
+			secret: newSecret(clusterName, msaName, newFakeToken(clusterName, msaName), ca2, func(secret *corev1.Secret) {
 				secret.ObjectMeta.Annotations["foo"] = "bar"
 				secret.ObjectMeta.Labels["foo"] = "bar"
 			}),
@@ -250,6 +258,32 @@ func TestReconcile(t *testing.T) {
 				assert.NoError(t, err)
 				assert.Equal(t, secret.ObjectMeta.Annotations["foo"], "bar")
 				assert.Equal(t, secret.ObjectMeta.Labels["foo"], "bar")
+			},
+		},
+		{
+			name:           "refreshing secret if sa namespace is changed",
+			spokeNamespace: "new-namespace",
+			sa:             newServiceAccount(clusterName, msaName),
+			secret: newSecret(clusterName, msaName, newFakeToken(clusterName, msaName), ca2, func(secret *corev1.Secret) {
+				secret.Labels = map[string]string{
+					common.LabelKeyIsManagedServiceAccount:        "true",
+					common.LabelKeyManagedServiceAccountNamespace: clusterName,
+					common.LabelKeyManagedServiceAccountName:      msaName,
+				}
+			}),
+			msa: newManagedServiceAccount(clusterName, msaName).
+				withRotationValidity(500*time.Second).
+				withTokenSecretRef(msaName, now.Add(300*time.Second), now).
+				build(),
+			newToken:               newFakeToken("new-namespace", msaName),
+			isExistingTokenInvalid: true,
+			validateFunc: func(t *testing.T, hubClient client.Client, actions []clienttesting.Action) {
+				secret := &corev1.Secret{}
+				err := hubClient.Get(context.TODO(), types.NamespacedName{
+					Namespace: clusterName,
+					Name:      msaName,
+				}, secret)
+				assert.NoError(t, err)
 			},
 		},
 	}
@@ -725,4 +759,65 @@ func TestCheckTokenRefreshAfter(t *testing.T) {
 
 		})
 	}
+}
+
+// FakeTokenConfig configuration for generating test tokens
+type FakeTokenConfig struct {
+	Namespace      string
+	ServiceAccount string
+	Audience       []string
+	Expiration     time.Time
+	Issuer         string
+	NestedClaims   bool // Whether to use new nested kubernetes.io structure
+}
+
+// DefaultFakeTokenConfig creates a default configuration with common values
+func DefaultFakeTokenConfig(namespace, saName string) *FakeTokenConfig {
+	return &FakeTokenConfig{
+		Namespace:      namespace,
+		ServiceAccount: saName,
+		Audience:       []string{"https://kubernetes.default.svc"},
+		Expiration:     time.Now().Add(1 * time.Hour),
+		Issuer:         "https://kubernetes.default.svc",
+		NestedClaims:   false,
+	}
+}
+
+// newFakeToken generates a JWT token with fake claims
+func newFakeToken(namespace, name string) string {
+	header := map[string]interface{}{
+		"alg": "HS256",
+		"typ": "JWT",
+	}
+
+	payload := map[string]interface{}{
+		"sub": serviceaccount.MakeUsername(namespace, name),
+		"iat": time.Now().Unix(),
+		"exp": "1779286676",
+		"iss": "https://kubernetes.default.svc",
+		"aud": "https://kubernetes.default.svc",
+		"kubernetes.io": map[string]interface{}{
+			"namespace": namespace,
+			"serviceaccount": map[string]string{
+				"name": name,
+				"uid":  "fake-uid-1234",
+			},
+		},
+	}
+
+	// Encode header and payload
+	headerBytes, _ := json.Marshal(header)
+	payloadBytes, _ := json.Marshal(payload)
+
+	// Base64URL encode parts
+	encodedHeader := base64.RawURLEncoding.EncodeToString(headerBytes)
+	encodedPayload := base64.RawURLEncoding.EncodeToString(payloadBytes)
+
+	// Create fake signature
+	fakeSignature := "fake-signature"
+
+	return fmt.Sprintf("%s.%s.%s",
+		encodedHeader,
+		encodedPayload,
+		base64.RawURLEncoding.EncodeToString([]byte(fakeSignature)))
 }

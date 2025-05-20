@@ -2,8 +2,12 @@ package controller
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
+	"fmt"
 	"os"
 	"reflect"
+	"strings"
 	"time"
 
 	"github.com/pkg/errors"
@@ -13,6 +17,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apiserver/pkg/authentication/serviceaccount"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -206,9 +211,9 @@ func (r *TokenReconciler) sync(ctx context.Context,
 		currentTokenSecret = nil
 	}
 
-	if shouldCreate, err := r.isSoonExpiring(managed, currentTokenSecret); err != nil {
+	if shouldCreateUpdate, err := r.shouldCreateUpdateTokenSecret(managed, currentTokenSecret); err != nil {
 		return nil, errors.Wrapf(err, "failed to make a decision on token creation")
-	} else if secretExists && !shouldCreate {
+	} else if secretExists && !shouldCreateUpdate {
 		return nil, nil
 	}
 
@@ -226,10 +231,9 @@ func (r *TokenReconciler) sync(ctx context.Context,
 		}
 	}
 
-	tokenSecret := buildSecret(managed, caData, []byte(token))
+	tokenSecret := r.buildSecret(managed, currentTokenSecret, caData, []byte(token))
 	if secretExists {
-		currentTokenSecret.Data = tokenSecret.Data
-		if err := r.HubClient.Update(ctx, currentTokenSecret); err != nil {
+		if err := r.HubClient.Update(ctx, tokenSecret); err != nil {
 			return nil, errors.Wrapf(err, "failed to update the token secret")
 		}
 	} else {
@@ -315,29 +319,55 @@ func (r *TokenReconciler) createTokenByDefaultSecret(
 	return "", metav1.Time{}, errors.Errorf("no default token is found for service account %s", managed.Name)
 }
 
-func buildSecret(managed *authv1beta1.ManagedServiceAccount, caData, tokenData []byte) *corev1.Secret {
-	return &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: managed.Namespace,
-			Name:      managed.Name,
-			Labels: map[string]string{
-				common.LabelKeyIsManagedServiceAccount: "true",
+func (r *TokenReconciler) buildSecret(managed *authv1beta1.ManagedServiceAccount, currentSecret *corev1.Secret,
+	caData, tokenData []byte) *corev1.Secret {
+	var copySecret *corev1.Secret
+	if currentSecret != nil {
+		copySecret = currentSecret.DeepCopy()
+	} else {
+		copySecret = &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: managed.Namespace,
+				Name:      managed.Name,
 			},
-			OwnerReferences: []metav1.OwnerReference{
-				{
-					APIVersion: authv1beta1.GroupVersion.String(),
-					Kind:       "ManagedServiceAccount",
-					Name:       managed.Name,
-					UID:        managed.UID,
-				},
-			},
-		},
-		Type: corev1.SecretTypeOpaque,
-		Data: map[string][]byte{
-			corev1.ServiceAccountRootCAKey: caData,
-			corev1.ServiceAccountTokenKey:  tokenData,
+			Type: corev1.SecretTypeOpaque,
+			Data: map[string][]byte{},
+		}
+	}
+
+	if copySecret.Labels == nil {
+		copySecret.Labels = map[string]string{}
+	}
+	copySecret.Labels[common.LabelKeyIsManagedServiceAccount] = "true"
+
+	copySecret.OwnerReferences = []metav1.OwnerReference{
+		{
+			APIVersion: authv1beta1.GroupVersion.String(),
+			Kind:       "ManagedServiceAccount",
+			Name:       managed.Name,
+			UID:        managed.UID,
 		},
 	}
+
+	copySecret.Data = map[string][]byte{
+		corev1.ServiceAccountRootCAKey: caData,
+		corev1.ServiceAccountTokenKey:  tokenData,
+	}
+	return copySecret
+}
+
+func (r *TokenReconciler) shouldCreateUpdateTokenSecret(msa *authv1beta1.ManagedServiceAccount,
+	secret *corev1.Secret) (bool, error) {
+	if msa.Status.TokenSecretRef == nil || msa.Status.ExpirationTimestamp == nil || secret == nil {
+		return true, nil
+	}
+
+	token := secret.Data[corev1.ServiceAccountTokenKey]
+	if match, err := CheckUserInToken(r.SpokeNamespace, msa.Name, string(token)); !match {
+		return true, err
+	}
+
+	return r.isSoonExpiring(msa, secret)
 }
 
 func (r *TokenReconciler) isSoonExpiring(msa *authv1beta1.ManagedServiceAccount, secret *corev1.Secret) (bool, error) {
@@ -374,4 +404,34 @@ func exceedThreshold(now metav1.Time, expiring metav1.Time, lastRefreshTimestamp
 	// in the managedserviceaccount.spec.rotation.validity, to calculate the refresh threshold
 	threshold := lastRefreshTimestamp.Add(expiring.Sub(lastRefreshTimestamp.Time) / 5 * 4)
 	return now.Time.After(threshold), threshold
+}
+
+// CheckUserInToken checks the namespace and name from the `sub` claim in JWT token payload
+func CheckUserInToken(namespace, name, token string) (bool, error) {
+	parts := strings.Split(token, ".")
+	if len(parts) != 3 {
+		return false, errors.New("invalid JWT token format")
+	}
+
+	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return false, fmt.Errorf("failed to decode payload: %w", err)
+	}
+
+	// the payload example :
+	// {"aud":["https://kubernetes.default.svc"],"exp":1748219780,"iat":1747614980,
+	// "iss":"https://kubernetes.default.svc","jti":"ed5ed5a8-02bc-48eb-8d17-6cbdf56d5e16",
+	// "kubernetes.io":{"namespace":"open-cluster-management-agent-addon",
+	// "serviceaccount":{"name":"klusterlet-addon-workmgr-log","uid":"ea225e46-7cf3-4939-8cc7-bff0ba8630ad"}},
+	// "nbf":1747614980,"sub":"system:serviceaccount:open-cluster-management-agent-addon:klusterlet-addon-workmgr-log"}
+	var claims map[string]interface{}
+	if err := json.Unmarshal(payload, &claims); err != nil {
+		return false, fmt.Errorf("failed to unmarshal claims: %w", err)
+	}
+
+	if sub, ok := claims["sub"].(string); ok {
+		return serviceaccount.MatchesUsername(namespace, name, sub), nil
+	}
+
+	return false, errors.New("namespace not found in token claims")
 }
