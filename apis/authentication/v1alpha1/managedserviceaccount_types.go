@@ -29,6 +29,7 @@ func init() {
 //+kubebuilder:deprecatedversion:warning="authentication.open-cluster-management.io/v1alpha1 ManagedServiceAccount is deprecated; use authentication.open-cluster-management.io/v1beta1 ManagedServiceAccount; version v1alpha1 will be removed in the next release"
 
 // +genclient
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 // ManagedServiceAccount is the Schema for the managedserviceaccounts API
 type ManagedServiceAccount struct {
 	metav1.TypeMeta   `json:",inline"`
@@ -39,6 +40,7 @@ type ManagedServiceAccount struct {
 }
 
 //+kubebuilder:object:root=true
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
 // ManagedServiceAccountList contains a list of ManagedServiceAccount
 type ManagedServiceAccountList struct {

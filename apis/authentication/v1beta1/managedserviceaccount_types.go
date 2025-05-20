@@ -29,6 +29,7 @@ func init() {
 //+kubebuilder:storageversion
 
 // +genclient
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 // ManagedServiceAccount is the Schema for the managedserviceaccounts API
 type ManagedServiceAccount struct {
 	metav1.TypeMeta   `json:",inline"`
@@ -39,6 +40,7 @@ type ManagedServiceAccount struct {
 }
 
 //+kubebuilder:object:root=true
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
 // ManagedServiceAccountList contains a list of ManagedServiceAccount
 type ManagedServiceAccountList struct {

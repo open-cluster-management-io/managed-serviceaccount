@@ -24,16 +24,18 @@ import (
 	fakediscovery "k8s.io/client-go/discovery/fake"
 	"k8s.io/client-go/testing"
 	clientset "open-cluster-management.io/managed-serviceaccount/pkg/generated/clientset/versioned"
-	authenticationv1alpha1 "open-cluster-management.io/managed-serviceaccount/pkg/generated/clientset/versioned/typed/authentication/v1alpha1"
-	fakeauthenticationv1alpha1 "open-cluster-management.io/managed-serviceaccount/pkg/generated/clientset/versioned/typed/authentication/v1alpha1/fake"
 	authenticationv1beta1 "open-cluster-management.io/managed-serviceaccount/pkg/generated/clientset/versioned/typed/authentication/v1beta1"
 	fakeauthenticationv1beta1 "open-cluster-management.io/managed-serviceaccount/pkg/generated/clientset/versioned/typed/authentication/v1beta1/fake"
 )
 
 // NewSimpleClientset returns a clientset that will respond with the provided objects.
 // It's backed by a very simple object tracker that processes creates, updates and deletions as-is,
-// without applying any validations and/or defaults. It shouldn't be considered a replacement
+// without applying any field management, validations and/or defaults. It shouldn't be considered a replacement
 // for a real clientset and is mostly useful in simple unit tests.
+//
+// DEPRECATED: NewClientset replaces this with support for field management, which significantly improves
+// server side apply testing. NewClientset is only available when apply configurations are generated (e.g.
+// via --with-applyconfig).
 func NewSimpleClientset(objects ...runtime.Object) *Clientset {
 	o := testing.NewObjectTracker(scheme, codecs.UniversalDecoder())
 	for _, obj := range objects {
@@ -79,11 +81,6 @@ var (
 	_ clientset.Interface = &Clientset{}
 	_ testing.FakeClient  = &Clientset{}
 )
-
-// AuthenticationV1alpha1 retrieves the AuthenticationV1alpha1Client
-func (c *Clientset) AuthenticationV1alpha1() authenticationv1alpha1.AuthenticationV1alpha1Interface {
-	return &fakeauthenticationv1alpha1.FakeAuthenticationV1alpha1{Fake: &c.Fake}
-}
 
 // AuthenticationV1beta1 retrieves the AuthenticationV1beta1Client
 func (c *Clientset) AuthenticationV1beta1() authenticationv1beta1.AuthenticationV1beta1Interface {

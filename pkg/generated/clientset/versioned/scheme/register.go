@@ -23,7 +23,6 @@ import (
 	schema "k8s.io/apimachinery/pkg/runtime/schema"
 	serializer "k8s.io/apimachinery/pkg/runtime/serializer"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
-	authenticationv1alpha1 "open-cluster-management.io/managed-serviceaccount/apis/authentication/v1alpha1"
 	authenticationv1beta1 "open-cluster-management.io/managed-serviceaccount/apis/authentication/v1beta1"
 )
 
@@ -31,7 +30,6 @@ var Scheme = runtime.NewScheme()
 var Codecs = serializer.NewCodecFactory(Scheme)
 var ParameterCodec = runtime.NewParameterCodec(Scheme)
 var localSchemeBuilder = runtime.SchemeBuilder{
-	authenticationv1alpha1.AddToScheme,
 	authenticationv1beta1.AddToScheme,
 }
 

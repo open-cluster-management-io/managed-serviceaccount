@@ -28,7 +28,7 @@ type FakeAuthenticationV1beta1 struct {
 }
 
 func (c *FakeAuthenticationV1beta1) ManagedServiceAccounts(namespace string) v1beta1.ManagedServiceAccountInterface {
-	return &FakeManagedServiceAccounts{c, namespace}
+	return newFakeManagedServiceAccounts(c, namespace)
 }
 
 // RESTClient returns a RESTClient that is used to communicate

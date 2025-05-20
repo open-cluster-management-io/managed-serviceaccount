@@ -18,32 +18,24 @@ limitations under the License.
 package versioned
 
 import (
-	"fmt"
-	"net/http"
+	fmt "fmt"
+	http "net/http"
 
 	discovery "k8s.io/client-go/discovery"
 	rest "k8s.io/client-go/rest"
 	flowcontrol "k8s.io/client-go/util/flowcontrol"
-	authenticationv1alpha1 "open-cluster-management.io/managed-serviceaccount/pkg/generated/clientset/versioned/typed/authentication/v1alpha1"
 	authenticationv1beta1 "open-cluster-management.io/managed-serviceaccount/pkg/generated/clientset/versioned/typed/authentication/v1beta1"
 )
 
 type Interface interface {
 	Discovery() discovery.DiscoveryInterface
-	AuthenticationV1alpha1() authenticationv1alpha1.AuthenticationV1alpha1Interface
 	AuthenticationV1beta1() authenticationv1beta1.AuthenticationV1beta1Interface
 }
 
 // Clientset contains the clients for groups.
 type Clientset struct {
 	*discovery.DiscoveryClient
-	authenticationV1alpha1 *authenticationv1alpha1.AuthenticationV1alpha1Client
-	authenticationV1beta1  *authenticationv1beta1.AuthenticationV1beta1Client
-}
-
-// AuthenticationV1alpha1 retrieves the AuthenticationV1alpha1Client
-func (c *Clientset) AuthenticationV1alpha1() authenticationv1alpha1.AuthenticationV1alpha1Interface {
-	return c.authenticationV1alpha1
+	authenticationV1beta1 *authenticationv1beta1.AuthenticationV1beta1Client
 }
 
 // AuthenticationV1beta1 retrieves the AuthenticationV1beta1Client
@@ -95,10 +87,6 @@ func NewForConfigAndClient(c *rest.Config, httpClient *http.Client) (*Clientset,
 
 	var cs Clientset
 	var err error
-	cs.authenticationV1alpha1, err = authenticationv1alpha1.NewForConfigAndClient(&configShallowCopy, httpClient)
-	if err != nil {
-		return nil, err
-	}
 	cs.authenticationV1beta1, err = authenticationv1beta1.NewForConfigAndClient(&configShallowCopy, httpClient)
 	if err != nil {
 		return nil, err
@@ -124,7 +112,6 @@ func NewForConfigOrDie(c *rest.Config) *Clientset {
 // New creates a new Clientset for the given RESTClient.
 func New(c rest.Interface) *Clientset {
 	var cs Clientset
-	cs.authenticationV1alpha1 = authenticationv1alpha1.New(c)
 	cs.authenticationV1beta1 = authenticationv1beta1.New(c)
 
 	cs.DiscoveryClient = discovery.NewDiscoveryClient(c)
