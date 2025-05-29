@@ -1,4 +1,3 @@
-
 # Image URL to use all building/pushing image targets
 IMG_REGISTRY ?= quay.io/open-cluster-management
 IMAGE_TAG ?= latest
@@ -99,6 +98,18 @@ KUSTOMIZE = $(shell pwd)/bin/kustomize
 kustomize: ## Download kustomize locally if necessary.
 	$(call go-get-tool,$(KUSTOMIZE),sigs.k8s.io/kustomize/kustomize/v4@v4.5.4)
 
+CLIENT_GEN = $(shell pwd)/bin/client-gen
+client-gen: ## Download controller-gen locally if necessary.
+	$(call go-get-tool,$(CLIENT_GEN),k8s.io/code-generator/cmd/client-gen@v0.29.2)
+
+LISTER_GEN = $(shell pwd)/bin/lister-gen
+lister-gen: ## Download lister-gen locally if necessary.
+	$(call go-get-tool,$(LISTER_GEN),k8s.io/code-generator/cmd/lister-gen@v0.29.2)
+
+INFORMER_GEN = $(shell pwd)/bin/informer-gen
+informer-gen: ## Download informer-gen locally if necessary.
+	$(call go-get-tool,$(INFORMER_GEN),k8s.io/code-generator/cmd/informer-gen@v0.29.2)
+
 # go-get-tool will 'go get' any package $2 and install it to $1.
 PROJECT_DIR := $(shell dirname $(abspath $(lastword $(MAKEFILE_LIST))))
 define go-get-tool
@@ -125,13 +136,5 @@ test-integration:
 test-e2e: build-e2e
 	./bin/e2e --test-cluster $(E2E_TEST_CLUSTER_NAME) $(GENKGO_ARGS)
 
-client-gen:
-	go install k8s.io/code-generator/cmd/client-gen@v0.29.2
-	client-gen --go-header-file hack/boilerplate.go.txt --clientset-name versioned \
-		--output-base ./_output/gen \
-		--output-package open-cluster-management.io/managed-serviceaccount/pkg/generated/clientset \
-		--input-base open-cluster-management.io/managed-serviceaccount/apis \
-		--input authentication/v1alpha1,authentication/v1beta1
-	rm -rf pkg/generated/clientset/versioned
-	mv _output/gen/open-cluster-management.io/managed-serviceaccount/pkg/generated/clientset/versioned pkg/generated/clientset/versioned
-	rm -rf _output/gen
+code-gen: client-gen lister-gen informer-gen ## Generate clientset, listers and informers
+	hack/code_gen.sh
