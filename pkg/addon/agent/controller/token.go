@@ -45,10 +45,6 @@ type TokenReconciler struct {
 	SpokeNamespace       string
 	ClusterName          string
 	SpokeCache           cache.Cache
-	// CreateTokenByDefaultSecret indicates whether to create the service account token by getting the default secret,
-	// if the api server is < 1.22, this should be true, otherwise, it should be false and the token will be requested
-	// by token request api
-	CreateTokenByDefaultSecret bool
 }
 
 // SetupWithManager sets up the controller with the Manager.
@@ -266,14 +262,7 @@ func (r *TokenReconciler) ensureServiceAccount(managed *authv1beta1.ManagedServi
 	return nil
 }
 
-func (r *TokenReconciler) createToken(managed *authv1beta1.ManagedServiceAccount) (string, metav1.Time, error) {
-	if r.CreateTokenByDefaultSecret {
-		return r.createTokenByDefaultSecret(managed)
-	}
-	return r.createTokenByTokenRequest(managed)
-}
-
-func (r *TokenReconciler) createTokenByTokenRequest(
+func (r *TokenReconciler) createToken(
 	managed *authv1beta1.ManagedServiceAccount) (string, metav1.Time, error) {
 	var expirationSec = int64(managed.Spec.Rotation.Validity.Seconds())
 	tr, err := r.SpokeNativeClient.CoreV1().ServiceAccounts(r.SpokeNamespace).
@@ -286,37 +275,6 @@ func (r *TokenReconciler) createTokenByTokenRequest(
 		return "", metav1.Time{}, err
 	}
 	return tr.Status.Token, tr.Status.ExpirationTimestamp, nil
-}
-
-func (r *TokenReconciler) createTokenByDefaultSecret(
-	managed *authv1beta1.ManagedServiceAccount) (string, metav1.Time, error) {
-
-	sa, err := r.SpokeNativeClient.CoreV1().ServiceAccounts(r.SpokeNamespace).Get(context.TODO(), managed.Name, metav1.GetOptions{})
-	if err != nil {
-		return "", metav1.Time{}, err
-	}
-
-	for _, secretRef := range sa.Secrets {
-		secret, err := r.SpokeNativeClient.CoreV1().Secrets(r.SpokeNamespace).Get(
-			context.TODO(), secretRef.Name, metav1.GetOptions{})
-		if err != nil {
-			return "", metav1.Time{}, err
-		}
-		if secret.Type != corev1.SecretTypeServiceAccountToken {
-			continue
-		}
-		if secret.Annotations[corev1.ServiceAccountNameKey] != managed.Name {
-			continue
-		}
-		if secret.Data[corev1.ServiceAccountTokenKey] == nil {
-			return "", metav1.Time{}, errors.Errorf("token is not found in secret %s", secret.Name)
-		}
-
-		defaultExpirationTime := metav1.NewTime(secret.CreationTimestamp.Add(managed.Spec.Rotation.Validity.Duration))
-		return string(secret.Data[corev1.ServiceAccountTokenKey]), defaultExpirationTime, nil
-	}
-
-	return "", metav1.Time{}, errors.Errorf("no default token is found for service account %s", managed.Name)
 }
 
 func (r *TokenReconciler) buildSecret(managed *authv1beta1.ManagedServiceAccount, currentSecret *corev1.Secret,
