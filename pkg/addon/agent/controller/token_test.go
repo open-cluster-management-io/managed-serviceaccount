@@ -629,7 +629,7 @@ func newFakeToken(namespace, name string) string {
 
 	payload := map[string]interface{}{
 		"sub": serviceaccount.MakeUsername(namespace, name),
-		"iat": time.Now().Unix(),
+		"iat": int64(1600000000), // Fixed timestamp for deterministic tests
 		"exp": "1779286676",
 		"iss": "https://kubernetes.default.svc",
 		"aud": "https://kubernetes.default.svc",
