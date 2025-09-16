@@ -321,8 +321,10 @@ func (r *TokenReconciler) shouldCreateUpdateTokenSecret(msa *authv1beta1.Managed
 	}
 
 	token := secret.Data[corev1.ServiceAccountTokenKey]
-	if match, err := CheckUserInToken(r.SpokeNamespace, msa.Name, string(token)); !match {
+	if match, err := CheckUserInToken(r.SpokeNamespace, msa.Name, string(token)); err != nil {
 		return true, err
+	} else if !match {
+		return true, nil
 	}
 
 	return r.isSoonExpiring(msa, secret)
@@ -391,5 +393,5 @@ func CheckUserInToken(namespace, name, token string) (bool, error) {
 		return serviceaccount.MatchesUsername(namespace, name, sub), nil
 	}
 
-	return false, errors.New("namespace not found in token claims")
+	return false, errors.New("sub claim not found in token claims")
 }
