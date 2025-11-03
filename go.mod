@@ -18,7 +18,7 @@ require (
 	k8s.io/utils v0.0.0-20250604170112-4c0f3b243397
 	open-cluster-management.io/addon-framework v1.1.0
 	open-cluster-management.io/api v1.1.0
-	sigs.k8s.io/controller-runtime v0.22.3
+	sigs.k8s.io/controller-runtime v0.22.4
 )
 
 require (
