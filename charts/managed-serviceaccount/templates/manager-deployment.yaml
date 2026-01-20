@@ -28,7 +28,7 @@ spec:
             {{- end }}
             - --agent-image-name={{ .Values.image }}:{{ .Values.tag | default (print "v" .Chart.Version) }}
             {{- if .Values.featureGates }}
-            - --feature-gates=EphemeralIdentity={{ .Values.featureGates.ephemeralIdentity | default false}}
+            - --feature-gates=EphemeralIdentity={{ .Values.featureGates.ephemeralIdentity | default false}},ClusterProfileCredSyncer={{ .Values.featureGates.clusterProfileCredSyncer | default false}}
             {{- end}}
             {{- if .Values.agentImagePullSecret }}
             - --agent-image-pull-secret={{ .Values.agentImagePullSecret }}

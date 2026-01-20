@@ -67,6 +67,7 @@ build: generate fmt vet build-bin
 
 build-bin:
 	go build -a -o bin/msa cmd/main.go
+	go build -a -o bin/cp-creds cmd/clusterprofile-credentials-plugin/main.go
 
 build-e2e:
 	go test -c -o bin/e2e ./e2e/

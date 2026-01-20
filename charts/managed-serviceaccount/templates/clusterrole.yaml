@@ -75,6 +75,14 @@ rules:
       - delete
       {{- end }}
   - apiGroups:
+      - multicluster.x-k8s.io
+    resources:
+      - clusterprofiles
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
       - certificates.k8s.io
     resources:
       - certificatesigningrequests
@@ -108,6 +116,7 @@ rules:
       - watch
       - create
       - update
+      - delete
   - apiGroups:
       - ""
     resources:

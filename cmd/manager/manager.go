@@ -41,12 +41,14 @@ import (
 	"open-cluster-management.io/addon-framework/pkg/addonmanager"
 	"open-cluster-management.io/addon-framework/pkg/utils"
 	addonclient "open-cluster-management.io/api/client/addon/clientset/versioned"
+	cpv1alpha1 "sigs.k8s.io/cluster-inventory-api/apis/v1alpha1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	authv1beta1 "open-cluster-management.io/managed-serviceaccount/apis/authentication/v1beta1"
 	"open-cluster-management.io/managed-serviceaccount/pkg/addon/commoncontroller"
 	"open-cluster-management.io/managed-serviceaccount/pkg/addon/manager"
+	"open-cluster-management.io/managed-serviceaccount/pkg/addon/manager/controller"
 	"open-cluster-management.io/managed-serviceaccount/pkg/common"
 	"open-cluster-management.io/managed-serviceaccount/pkg/features"
 	"open-cluster-management.io/managed-serviceaccount/pkg/util"
@@ -61,6 +63,7 @@ var (
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 	utilruntime.Must(authv1beta1.AddToScheme(scheme))
+	utilruntime.Must(cpv1alpha1.AddToScheme(scheme))
 	//+kubebuilder:scaffold:scheme
 }
 
@@ -233,6 +236,16 @@ func (o *HubManagerOptions) Run() error {
 			mgr.GetClient(),
 		)).SetupWithManager(mgr); err != nil {
 			setupLog.Error(err, "unable to register EphemeralIdentityReconciler")
+			os.Exit(1)
+		}
+	}
+
+	if features.FeatureGates.Enabled(features.ClusterProfileCredSyncer) {
+		if err := (controller.NewClusterProfileCredSyncer(
+			mgr.GetCache(),
+			mgr.GetClient(),
+		)).SetupWithManager(mgr); err != nil {
+			setupLog.Error(err, "unable to register ClusterProfileCredSyncer")
 			os.Exit(1)
 		}
 	}
