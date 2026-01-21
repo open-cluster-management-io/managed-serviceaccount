@@ -494,3 +494,197 @@ func TestMapManagedServiceAccountToClusterProfile(t *testing.T) {
 	assert.Equal(t, ClusterProfileNamespace, requests[0].Namespace)
 	assert.Equal(t, "cluster1", requests[0].Name)
 }
+
+func TestMapTokenSecretToClusterProfile(t *testing.T) {
+	reconciler := &ClusterProfileCredSyncer{}
+
+	testCases := []struct {
+		name             string
+		secret           client.Object
+		expectedRequests int
+		expectedName     string
+	}{
+		{
+			name: "Token secret with label maps to cluster profile",
+			secret: &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-token",
+					Namespace: "cluster1",
+					Labels: map[string]string{
+						common.LabelKeyIsManagedServiceAccount: "true",
+					},
+				},
+			},
+			expectedRequests: 1,
+			expectedName:     "cluster1",
+		},
+		{
+			name: "Token secret without label still maps (predicate filters)",
+			secret: &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-token",
+					Namespace: "cluster2",
+				},
+			},
+			expectedRequests: 1,
+			expectedName:     "cluster2",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			requests := reconciler.mapTokenSecretToClusterProfile(context.Background(), tc.secret)
+
+			assert.Len(t, requests, tc.expectedRequests)
+			if tc.expectedRequests > 0 {
+				assert.Equal(t, ClusterProfileNamespace, requests[0].Namespace)
+				assert.Equal(t, tc.expectedName, requests[0].Name)
+			}
+		})
+	}
+}
+
+func TestTokenRotationTriggersSync(t *testing.T) {
+	// This test verifies that when a token secret is updated (rotation),
+	// the synced credential is updated accordingly
+	testCases := []struct {
+		name              string
+		clusterProfile    *cpv1alpha1.ClusterProfile
+		msaList           []authv1beta1.ManagedServiceAccount
+		existingSecrets   []corev1.Secret
+		updatedTokenValue []byte
+		validateFunc      func(t *testing.T, hubClient client.Client)
+	}{
+		{
+			name: "Token rotation updates synced credential",
+			clusterProfile: newClusterProfile(ClusterProfileNamespace, "cluster1").
+				build(),
+			msaList: []authv1beta1.ManagedServiceAccount{
+				*newManagedServiceAccountWithToken("cluster1", "msa1").build(),
+			},
+			existingSecrets: []corev1.Secret{
+				// Initial token secret with old token
+				*newTokenSecret("cluster1", "msa1").
+					withToken([]byte("rotated-token-value")).
+					build(),
+				// Existing synced credential with old token
+				*newSecret(ClusterProfileNamespace, "cluster1-msa1").
+					withLabel(LabelKeyClusterProfileCreds, "true").
+					withLabel(LabelKeySyncedFrom, "cluster1-msa1").
+					withData(corev1.ServiceAccountTokenKey, []byte("old-token-value")).
+					withData(corev1.ServiceAccountRootCAKey, []byte("test-ca")).
+					build(),
+			},
+			validateFunc: func(t *testing.T, hubClient client.Client) {
+				// Verify the synced credential was updated with the new token
+				cred := &corev1.Secret{}
+				err := hubClient.Get(context.TODO(), types.NamespacedName{
+					Namespace: ClusterProfileNamespace,
+					Name:      "cluster1-msa1",
+				}, cred)
+				assert.NoError(t, err)
+				assert.Equal(t, []byte("rotated-token-value"), cred.Data[corev1.ServiceAccountTokenKey],
+					"synced credential should have the new rotated token")
+				assert.Equal(t, []byte("test-ca"), cred.Data[corev1.ServiceAccountRootCAKey])
+			},
+		},
+		{
+			name: "Multiple token rotations sync correctly",
+			clusterProfile: newClusterProfile(ClusterProfileNamespace, "cluster1").
+				build(),
+			msaList: []authv1beta1.ManagedServiceAccount{
+				*newManagedServiceAccountWithToken("cluster1", "msa1").build(),
+				*newManagedServiceAccountWithToken("cluster1", "msa2").build(),
+			},
+			existingSecrets: []corev1.Secret{
+				// Token secret 1 rotated
+				*newTokenSecret("cluster1", "msa1").
+					withToken([]byte("new-token-1")).
+					build(),
+				// Token secret 2 rotated
+				*newTokenSecret("cluster1", "msa2").
+					withToken([]byte("new-token-2")).
+					build(),
+				// Existing synced credentials with old tokens
+				*newSecret(ClusterProfileNamespace, "cluster1-msa1").
+					withLabel(LabelKeyClusterProfileCreds, "true").
+					withLabel(LabelKeySyncedFrom, "cluster1-msa1").
+					withData(corev1.ServiceAccountTokenKey, []byte("old-token-1")).
+					build(),
+				*newSecret(ClusterProfileNamespace, "cluster1-msa2").
+					withLabel(LabelKeyClusterProfileCreds, "true").
+					withLabel(LabelKeySyncedFrom, "cluster1-msa2").
+					withData(corev1.ServiceAccountTokenKey, []byte("old-token-2")).
+					build(),
+			},
+			validateFunc: func(t *testing.T, hubClient client.Client) {
+				// Verify both credentials were updated
+				cred1 := &corev1.Secret{}
+				err := hubClient.Get(context.TODO(), types.NamespacedName{
+					Namespace: ClusterProfileNamespace,
+					Name:      "cluster1-msa1",
+				}, cred1)
+				assert.NoError(t, err)
+				assert.Equal(t, []byte("new-token-1"), cred1.Data[corev1.ServiceAccountTokenKey])
+
+				cred2 := &corev1.Secret{}
+				err = hubClient.Get(context.TODO(), types.NamespacedName{
+					Namespace: ClusterProfileNamespace,
+					Name:      "cluster1-msa2",
+				}, cred2)
+				assert.NoError(t, err)
+				assert.Equal(t, []byte("new-token-2"), cred2.Data[corev1.ServiceAccountTokenKey])
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Create fake client scheme with all required types
+			testscheme := runtime.NewScheme()
+			authv1beta1.AddToScheme(testscheme)
+			corev1.AddToScheme(testscheme)
+			cpv1alpha1.AddToScheme(testscheme)
+
+			// Build runtime objects
+			objs := []runtime.Object{}
+			if tc.clusterProfile != nil {
+				objs = append(objs, tc.clusterProfile)
+			}
+			for i := range tc.msaList {
+				objs = append(objs, &tc.msaList[i])
+			}
+			for i := range tc.existingSecrets {
+				objs = append(objs, &tc.existingSecrets[i])
+			}
+
+			hubClient := fake.NewClientBuilder().
+				WithScheme(testscheme).
+				WithRuntimeObjects(objs...).
+				Build()
+
+			reconciler := NewClusterProfileCredSyncer(
+				&clusterProfileFakeCache{
+					clusterProfile: tc.clusterProfile,
+					msaList:        tc.msaList,
+					secrets:        tc.existingSecrets,
+				},
+				hubClient,
+			)
+
+			// Reconcile (simulates the controller responding to token secret change)
+			_, err := reconciler.Reconcile(context.Background(), reconcile.Request{
+				NamespacedName: types.NamespacedName{
+					Name:      tc.clusterProfile.Name,
+					Namespace: tc.clusterProfile.Namespace,
+				},
+			})
+
+			assert.NoError(t, err)
+
+			if tc.validateFunc != nil {
+				tc.validateFunc(t, hubClient)
+			}
+		})
+	}
+}

@@ -396,6 +396,167 @@ var _ = Describe("ClusterProfile Credentials Sync and Plugin Test", Label("clust
 				err = f.HubRuntimeClient().Delete(context.TODO(), msa)
 				Expect(err).NotTo(HaveOccurred())
 			})
+
+			It("Should detect and sync token secret updates via watch", func() {
+				By("Creating ManagedServiceAccount")
+				msa := &authv1beta1.ManagedServiceAccount{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: targetClusterName,
+						Name:      msaName1,
+					},
+					Spec: authv1beta1.ManagedServiceAccountSpec{
+						Rotation: authv1beta1.ManagedServiceAccountRotation{
+							Validity: metav1.Duration{Duration: time.Minute * 30},
+						},
+					},
+				}
+				err := f.HubRuntimeClient().Create(context.TODO(), msa)
+				Expect(err).NotTo(HaveOccurred())
+
+				By("Waiting for initial token secret and synced credential to be created")
+				syncedSecretName := fmt.Sprintf("%s-%s", targetClusterName, msaName1)
+				var tokenSecretName string
+				var originalToken []byte
+				Eventually(func() bool {
+					latest := &authv1beta1.ManagedServiceAccount{}
+					err := f.HubRuntimeClient().Get(context.TODO(), types.NamespacedName{
+						Namespace: targetClusterName,
+						Name:      msaName1,
+					}, latest)
+					if err != nil || latest.Status.TokenSecretRef == nil {
+						return false
+					}
+					tokenSecretName = latest.Status.TokenSecretRef.Name
+
+					// Verify synced secret exists with token
+					syncedSecret := &corev1.Secret{}
+					err = f.HubRuntimeClient().Get(context.TODO(), types.NamespacedName{
+						Namespace: controller.ClusterProfileNamespace,
+						Name:      syncedSecretName,
+					}, syncedSecret)
+					if err == nil && len(syncedSecret.Data[corev1.ServiceAccountTokenKey]) > 0 {
+						originalToken = syncedSecret.Data[corev1.ServiceAccountTokenKey]
+						return true
+					}
+					return false
+				}).WithTimeout(pollTimeout).WithPolling(pollInterval).Should(BeTrue())
+
+				By("Directly updating the token secret to simulate rotation")
+				tokenSecret := &corev1.Secret{}
+				err = f.HubRuntimeClient().Get(context.TODO(), types.NamespacedName{
+					Namespace: targetClusterName,
+					Name:      tokenSecretName,
+				}, tokenSecret)
+				Expect(err).NotTo(HaveOccurred())
+
+				// Update the token data to a new value
+				newTokenValue := []byte("rotated-token-" + framework.RunID)
+				tokenSecret.Data[corev1.ServiceAccountTokenKey] = newTokenValue
+				err = f.HubRuntimeClient().Update(context.TODO(), tokenSecret)
+				Expect(err).NotTo(HaveOccurred())
+
+				By("Verifying synced credential is automatically updated via token secret watch")
+				Eventually(func() bool {
+					syncedSecret := &corev1.Secret{}
+					err := f.HubRuntimeClient().Get(context.TODO(), types.NamespacedName{
+						Namespace: controller.ClusterProfileNamespace,
+						Name:      syncedSecretName,
+					}, syncedSecret)
+					if err != nil {
+						return false
+					}
+
+					// Verify the synced secret now has the new token value
+					syncedToken := syncedSecret.Data[corev1.ServiceAccountTokenKey]
+					return len(syncedToken) > 0 &&
+						string(syncedToken) == string(newTokenValue) &&
+						string(syncedToken) != string(originalToken)
+				}).WithTimeout(pollTimeout).WithPolling(pollInterval).Should(BeTrue(),
+					"Synced credential should be updated when token secret changes")
+
+				By("Cleaning up ManagedServiceAccount")
+				err = f.HubRuntimeClient().Delete(context.TODO(), msa)
+				Expect(err).NotTo(HaveOccurred())
+			})
+
+			It("Should handle multiple token secret updates in quick succession", func() {
+				By("Creating ManagedServiceAccount")
+				msa := &authv1beta1.ManagedServiceAccount{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: targetClusterName,
+						Name:      msaName1,
+					},
+					Spec: authv1beta1.ManagedServiceAccountSpec{
+						Rotation: authv1beta1.ManagedServiceAccountRotation{
+							Validity: metav1.Duration{Duration: time.Minute * 30},
+						},
+					},
+				}
+				err := f.HubRuntimeClient().Create(context.TODO(), msa)
+				Expect(err).NotTo(HaveOccurred())
+
+				By("Waiting for initial setup")
+				syncedSecretName := fmt.Sprintf("%s-%s", targetClusterName, msaName1)
+				var tokenSecretName string
+				Eventually(func() bool {
+					latest := &authv1beta1.ManagedServiceAccount{}
+					err := f.HubRuntimeClient().Get(context.TODO(), types.NamespacedName{
+						Namespace: targetClusterName,
+						Name:      msaName1,
+					}, latest)
+					if err != nil || latest.Status.TokenSecretRef == nil {
+						return false
+					}
+					tokenSecretName = latest.Status.TokenSecretRef.Name
+
+					syncedSecret := &corev1.Secret{}
+					err = f.HubRuntimeClient().Get(context.TODO(), types.NamespacedName{
+						Namespace: controller.ClusterProfileNamespace,
+						Name:      syncedSecretName,
+					}, syncedSecret)
+					return err == nil && len(syncedSecret.Data[corev1.ServiceAccountTokenKey]) > 0
+				}).WithTimeout(pollTimeout).WithPolling(pollInterval).Should(BeTrue())
+
+				By("Performing multiple rapid token updates")
+				finalTokenValue := []byte("final-token-" + framework.RunID)
+				for i := 0; i < 3; i++ {
+					tokenSecret := &corev1.Secret{}
+					err = f.HubRuntimeClient().Get(context.TODO(), types.NamespacedName{
+						Namespace: targetClusterName,
+						Name:      tokenSecretName,
+					}, tokenSecret)
+					Expect(err).NotTo(HaveOccurred())
+
+					if i < 2 {
+						tokenSecret.Data[corev1.ServiceAccountTokenKey] = []byte(fmt.Sprintf("intermediate-token-%d-%s", i, framework.RunID))
+					} else {
+						tokenSecret.Data[corev1.ServiceAccountTokenKey] = finalTokenValue
+					}
+					err = f.HubRuntimeClient().Update(context.TODO(), tokenSecret)
+					Expect(err).NotTo(HaveOccurred())
+
+					// Small delay between updates
+					time.Sleep(100 * time.Millisecond)
+				}
+
+				By("Verifying synced credential eventually has the final token value")
+				Eventually(func() bool {
+					syncedSecret := &corev1.Secret{}
+					err := f.HubRuntimeClient().Get(context.TODO(), types.NamespacedName{
+						Namespace: controller.ClusterProfileNamespace,
+						Name:      syncedSecretName,
+					}, syncedSecret)
+					if err != nil {
+						return false
+					}
+					return string(syncedSecret.Data[corev1.ServiceAccountTokenKey]) == string(finalTokenValue)
+				}).WithTimeout(pollTimeout).WithPolling(pollInterval).Should(BeTrue(),
+					"Synced credential should eventually reflect the final token value")
+
+				By("Cleaning up ManagedServiceAccount")
+				err = f.HubRuntimeClient().Delete(context.TODO(), msa)
+				Expect(err).NotTo(HaveOccurred())
+			})
 		})
 
 		Context("ClusterProfile Credentials Plugin", func() {

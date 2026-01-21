@@ -11,12 +11,15 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	cpv1alpha1 "sigs.k8s.io/cluster-inventory-api/apis/v1alpha1"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	authv1beta1 "open-cluster-management.io/managed-serviceaccount/apis/authentication/v1beta1"
+	"open-cluster-management.io/managed-serviceaccount/pkg/common"
 )
 
 const (
@@ -44,11 +47,24 @@ func NewClusterProfileCredSyncer(cache cache.Cache, hubClient client.Client) *Cl
 
 // SetupWithManager sets up the clusterProfileCredSyncer with the manager.
 func (r *ClusterProfileCredSyncer) SetupWithManager(mgr ctrl.Manager) error {
+	// Predicate to filter only token secrets with the required label
+	secretFilter := func(obj client.Object) bool {
+		if secret, ok := obj.(*corev1.Secret); ok {
+			return secret.Labels[common.LabelKeyIsManagedServiceAccount] == "true"
+		}
+		return false
+	}
+
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&cpv1alpha1.ClusterProfile{}).
 		Watches(
 			&authv1beta1.ManagedServiceAccount{},
 			handler.EnqueueRequestsFromMapFunc(r.mapManagedServiceAccountToClusterProfile),
+		).
+		Watches(
+			&corev1.Secret{},
+			handler.EnqueueRequestsFromMapFunc(r.mapTokenSecretToClusterProfile),
+			builder.WithPredicates(predicate.NewPredicateFuncs(secretFilter)),
 		).
 		Complete(r)
 }
@@ -69,6 +85,27 @@ func (r *ClusterProfileCredSyncer) mapManagedServiceAccountToClusterProfile(ctx 
 			NamespacedName: types.NamespacedName{
 				Namespace: ClusterProfileNamespace,
 				Name:      msa.Namespace,
+			},
+		},
+	}
+}
+
+// mapTokenSecretToClusterProfile maps token secret events to the corresponding clusterprofile
+func (r *ClusterProfileCredSyncer) mapTokenSecretToClusterProfile(ctx context.Context, obj client.Object) []reconcile.Request {
+	// when a token secret changes, reconcile the corresponding clusterprofile
+	// clusterprofile name = secret namespace
+	// clusterprofile namespace = "open-cluster-management"
+	secret, ok := obj.(*corev1.Secret)
+	if !ok {
+		logger.Error(fmt.Errorf("unexpected object type"), "expected secret")
+		return []reconcile.Request{}
+	}
+
+	return []reconcile.Request{
+		{
+			NamespacedName: types.NamespacedName{
+				Namespace: ClusterProfileNamespace,
+				Name:      secret.Namespace,
 			},
 		},
 	}
