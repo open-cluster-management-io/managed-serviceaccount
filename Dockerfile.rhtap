@@ -6,7 +6,8 @@ RUN make build-bin
 
 FROM registry.access.redhat.com/ubi9/ubi-minimal:latest
 LABEL \
-    name="managed-serviceaccount" \
+    name="multicluster-engine/managed-serviceaccount-rhel9" \
+    cpe="cpe:/a:redhat:multicluster_engine:2.8::el9" \
     com.redhat.component="managed-serviceaccount" \
     description="Managed ServiceAccount is an OCM addon developed for synchronizing ServiceAccount to the \
     managed clusters and collecting the tokens from these local service accounts as secret resources back \
