@@ -141,7 +141,7 @@ func (r *ClusterProfileCredSyncer) Reconcile(ctx context.Context, req reconcile.
 	}
 
 	// Clean up synced credentials that no longer have corresponding managedserviceaccounts
-	if err := r.cleanupOrphanedCreds(ctx, cp.Namespace, msaList.Items); err != nil {
+	if err := r.cleanupOrphanedCreds(ctx, cp, msaList.Items); err != nil {
 		return reconcile.Result{}, errors.Wrapf(err, "failed to cleanup orphaned credentials")
 	}
 
@@ -278,14 +278,24 @@ func dataEqual(a, b map[string][]byte) bool {
 	return true
 }
 
+// isOwnedByClusterProfile checks if a secret is owned by the given clusterprofile
+func isOwnedByClusterProfile(secret *corev1.Secret, cp *cpv1alpha1.ClusterProfile) bool {
+	for _, ownerRef := range secret.OwnerReferences {
+		if ownerRef.UID == cp.UID {
+			return true
+		}
+	}
+	return false
+}
+
 // cleanupOrphanedCreds removes synced credentials that no longer have corresponding managedserviceaccounts
-func (r *ClusterProfileCredSyncer) cleanupOrphanedCreds(ctx context.Context, namespace string, msaList []authv1beta1.ManagedServiceAccount) error {
+func (r *ClusterProfileCredSyncer) cleanupOrphanedCreds(ctx context.Context, cp *cpv1alpha1.ClusterProfile, msaList []authv1beta1.ManagedServiceAccount) error {
 	// List all credentials in the clusterprofile namespace with the clusterprofile-creds label
 	secretList := &corev1.SecretList{}
-	if err := r.Cache.List(ctx, secretList, client.InNamespace(namespace), client.MatchingLabels{
+	if err := r.Cache.List(ctx, secretList, client.InNamespace(cp.Namespace), client.MatchingLabels{
 		LabelKeyClusterProfileCreds: "true",
 	}); err != nil {
-		return errors.Wrapf(err, "failed to list synced credentials in namespace %s", namespace)
+		return errors.Wrapf(err, "failed to list synced credentials in namespace %s", cp.Namespace)
 	}
 
 	// Build a set of valid managedserviceaccount identifiers
@@ -295,7 +305,13 @@ func (r *ClusterProfileCredSyncer) cleanupOrphanedCreds(ctx context.Context, nam
 	}
 
 	// Delete credentials that don't have corresponding managedserviceaccount
+	// Only clean up secrets that are owned by this clusterprofile
 	for _, secret := range secretList.Items {
+		// Check if this secret is owned by the current clusterprofile
+		if !isOwnedByClusterProfile(&secret, cp) {
+			continue
+		}
+
 		syncedFrom := secret.Labels[LabelKeySyncedFrom]
 		if syncedFrom == "" {
 			continue

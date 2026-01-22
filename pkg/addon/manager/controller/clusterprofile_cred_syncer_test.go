@@ -128,11 +128,13 @@ func TestClusterProfileCredSyncerReconcile(t *testing.T) {
 				*newSecret(ClusterProfileNamespace, "cluster1-msa1").
 					withLabel(LabelKeyClusterProfileCreds, "true").
 					withLabel(LabelKeySyncedFrom, "cluster1-msa1").
+					withOwnerReference(newClusterProfile(ClusterProfileNamespace, "cluster1").build()).
 					build(),
 				// Orphaned credential from deleted ManagedServiceAccount
 				*newSecret(ClusterProfileNamespace, "cluster1-deleted-msa").
 					withLabel(LabelKeyClusterProfileCreds, "true").
 					withLabel(LabelKeySyncedFrom, "cluster1-deleted-msa").
+					withOwnerReference(newClusterProfile(ClusterProfileNamespace, "cluster1").build()).
 					build(),
 			},
 			validateFunc: func(t *testing.T, hubClient client.Client) {
@@ -174,6 +176,50 @@ func TestClusterProfileCredSyncerReconcile(t *testing.T) {
 				err := hubClient.List(context.TODO(), secretList, client.InNamespace(ClusterProfileNamespace))
 				assert.NoError(t, err)
 				assert.Equal(t, 0, len(secretList.Items), "no credentials should be synced")
+			},
+		},
+		{
+			name: "Do not delete synced credentials owned by other ClusterProfiles",
+			clusterProfile: newClusterProfile(ClusterProfileNamespace, "cluster2").
+				build(),
+			msaList: []authv1beta1.ManagedServiceAccount{
+				*newManagedServiceAccountWithToken("cluster2", "msa2").build(),
+			},
+			existingSecrets: []corev1.Secret{
+				// Token secret for cluster2/msa2
+				*newTokenSecret("cluster2", "msa2").build(),
+				// Synced credential owned by cluster2 (current ClusterProfile)
+				*newSecret(ClusterProfileNamespace, "cluster2-msa2").
+					withLabel(LabelKeyClusterProfileCreds, "true").
+					withLabel(LabelKeySyncedFrom, "cluster2-msa2").
+					withOwnerReference(newClusterProfile(ClusterProfileNamespace, "cluster2").build()).
+					build(),
+				// Synced credential owned by cluster1 (different ClusterProfile)
+				// This should NOT be deleted when reconciling cluster2
+				*newSecret(ClusterProfileNamespace, "cluster1-msa1").
+					withLabel(LabelKeyClusterProfileCreds, "true").
+					withLabel(LabelKeySyncedFrom, "cluster1-msa1").
+					withOwnerReference(newClusterProfile(ClusterProfileNamespace, "cluster1").build()).
+					build(),
+			},
+			validateFunc: func(t *testing.T, hubClient client.Client) {
+				// Synced credential for cluster2-msa2 should exist
+				cred2 := &corev1.Secret{}
+				err := hubClient.Get(context.TODO(), types.NamespacedName{
+					Namespace: ClusterProfileNamespace,
+					Name:      "cluster2-msa2",
+				}, cred2)
+				assert.NoError(t, err, "cluster2-msa2 should exist")
+
+				// Synced credential for cluster1-msa1 should still exist
+				// (not deleted by cluster2 reconciliation)
+				cred1 := &corev1.Secret{}
+				err = hubClient.Get(context.TODO(), types.NamespacedName{
+					Namespace: ClusterProfileNamespace,
+					Name:      "cluster1-msa1",
+				}, cred1)
+				assert.NoError(t, err, "cluster1-msa1 should NOT be deleted by cluster2 reconciliation")
+				assert.Equal(t, "cluster1-msa1", cred1.Labels[LabelKeySyncedFrom])
 			},
 		},
 	}
@@ -471,6 +517,19 @@ func (b *secretBuilder) withToken(token []byte) *secretBuilder {
 	}
 	b.secret.Data[corev1.ServiceAccountTokenKey] = token
 	b.secret.Data[corev1.ServiceAccountRootCAKey] = []byte("test-ca")
+	return b
+}
+
+func (b *secretBuilder) withOwnerReference(cp *cpv1alpha1.ClusterProfile) *secretBuilder {
+	b.secret.OwnerReferences = []metav1.OwnerReference{
+		{
+			APIVersion: cpv1alpha1.GroupVersion.String(),
+			Kind:       cpv1alpha1.Kind,
+			Name:       cp.Name,
+			UID:        cp.UID,
+			Controller: ptr(true),
+		},
+	}
 	return b
 }
 
