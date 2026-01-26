@@ -12,8 +12,11 @@ else
 GOBIN=$(shell go env GOBIN)
 endif
 
+GOOS   ?= $(shell go env GOOS)
+GOARCH ?= $(shell go env GOARCH)
+
 export DOCKER_BUILDER ?= docker
-export CGO_ENABLED = 1
+export CGO_ENABLED = 0
 export GOFLAGS ?=
 
 # Setting SHELL to bash allows bash commands to be executed by recipes.
@@ -65,9 +68,11 @@ test: manifests generate fmt vet ## Run tests.
 
 build: generate fmt vet build-bin
 
+# build a fully self-contained clusterprofile credentials plugin binary
+# so it can run in arbitrary environments (e.g. scratch/distroless).
 build-bin:
-	go build -a -o bin/msa cmd/main.go
-	go build -a -o bin/cp-creds cmd/clusterprofile-credentials-plugin/main.go
+	GOOS=$(GOOS) GOARCH=$(GOARCH) CGO_ENABLED=$(CGO_ENABLED) go build -trimpath -ldflags="-s -w" -a -o bin/msa cmd/main.go
+	GOOS=$(GOOS) GOARCH=$(GOARCH) CGO_ENABLED=$(CGO_ENABLED) go build -trimpath -ldflags="-s -w" -a -o bin/cp-creds cmd/clusterprofile-credentials-plugin/main.go
 
 build-e2e:
 	go test -c -o bin/e2e ./e2e/
