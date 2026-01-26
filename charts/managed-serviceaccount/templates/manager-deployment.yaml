@@ -1,4 +1,3 @@
-{{- if ne .Values.hubDeployMode "AddOnTemplate" }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -26,6 +25,7 @@ spec:
             {{- if gt (int .Values.replicas) 1 }}
             - --leader-elect=true
             {{- end }}
+            - --addon-template-mode={{ eq .Values.hubDeployMode "AddOnTemplate" }}
             - --agent-image-name={{ .Values.image }}:{{ .Values.tag | default (print "v" .Chart.Version) }}
             {{- if .Values.featureGates }}
             - --feature-gates=EphemeralIdentity={{ .Values.featureGates.ephemeralIdentity | default false}},ClusterProfileCredSyncer={{ .Values.featureGates.clusterProfileCredSyncer | default false}}
@@ -33,4 +33,3 @@ spec:
             {{- if .Values.agentImagePullSecret }}
             - --agent-image-pull-secret={{ .Values.agentImagePullSecret }}
             {{- end}}
-{{- end }}

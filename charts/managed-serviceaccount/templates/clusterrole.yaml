@@ -1,9 +1,59 @@
-{{- if ne .Values.hubDeployMode "AddOnTemplate" }}
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
   name: open-cluster-management:managed-serviceaccount:addon-manager
 rules:
+  # Permissions for ClusterProfileCredSyncer (always needed)
+  - apiGroups:
+      - authentication.open-cluster-management.io
+    resources:
+      - managedserviceaccounts
+      - managedserviceaccounts/status
+    verbs:
+      - get
+      - list
+      - watch
+      - update
+      - patch
+      {{- if (.Values.featureGates | default dict).ephemeralIdentity }}
+      - delete
+      {{- end }}
+  {{- if or (eq .Values.hubDeployMode "AddOnTemplate") ((.Values.featureGates | default dict).clusterProfileCredSyncer) }}
+  - apiGroups:
+      - multicluster.x-k8s.io
+    resources:
+      - clusterprofiles
+    verbs:
+      - get
+      - list
+      - watch
+  {{- end }}
+  - apiGroups:
+      - ""
+    resources:
+      - secrets
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+      - update
+      {{- if or (eq .Values.hubDeployMode "AddOnTemplate") ((.Values.featureGates | default dict).clusterProfileCredSyncer) }}
+      - delete
+      {{- end }}
+  - apiGroups:
+      - coordination.k8s.io
+    resources:
+      - leases
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+      - update
+      - patch
+{{- if ne .Values.hubDeployMode "AddOnTemplate" }}
+  # Additional permissions for addon manager (only in Deployment mode)
   - apiGroups:
       - cluster.open-cluster-management.io
     resources:
@@ -61,28 +111,6 @@ rules:
       - list
       - watch
   - apiGroups:
-      - authentication.open-cluster-management.io
-    resources:
-      - managedserviceaccounts
-      - managedserviceaccounts/status
-    verbs:
-      - get
-      - list
-      - watch
-      - update
-      - patch
-      {{- if (.Values.featureGates | default dict).ephemeralIdentity }}
-      - delete
-      {{- end }}
-  - apiGroups:
-      - multicluster.x-k8s.io
-    resources:
-      - clusterprofiles
-    verbs:
-      - get
-      - list
-      - watch
-  - apiGroups:
       - certificates.k8s.io
     resources:
       - certificatesigningrequests
@@ -109,17 +137,6 @@ rules:
   - apiGroups:
       - ""
     resources:
-      - secrets
-    verbs:
-      - get
-      - list
-      - watch
-      - create
-      - update
-      - delete
-  - apiGroups:
-      - ""
-    resources:
       - configmaps
       - events
     verbs:
@@ -140,17 +157,6 @@ rules:
       - work.open-cluster-management.io
     resources:
       - manifestworks
-    verbs:
-      - get
-      - list
-      - watch
-      - create
-      - update
-      - patch
-  - apiGroups:
-      - coordination.k8s.io
-    resources:
-      - leases
     verbs:
       - get
       - list

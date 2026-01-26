@@ -127,6 +127,7 @@ jobs:
           kind load docker-image quay.io/open-cluster-management/managed-serviceaccount:latest --name chart-testing
       - name: Install latest managed-serviceaccount
         run: |
+          kubectl apply -f https://raw.githubusercontent.com/kubernetes-sigs/cluster-inventory-api/refs/heads/main/config/crd/bases/multicluster.x-k8s.io_clusterprofiles.yaml
           helm install \
             -n open-cluster-management-addon --create-namespace \
             managed-serviceaccount charts/managed-serviceaccount/ \
@@ -136,7 +137,7 @@ jobs:
             --set targetCluster=loopback
       - name: Run e2e test
         run: |
-          make test-e2e GENKGO_ARGS='--ginkgo.label-filter='\''!ephemeral&&!clusterprofile&&!install'\'''
+          make test-e2e GENKGO_ARGS='--ginkgo.label-filter='\''!ephemeral&&!install'\'''
           # run ephemeral tests after non-ephemeral and non-install tests to wait for the addon agent to be steady
           make test-e2e GENKGO_ARGS='--ginkgo.label-filter=ephemeral'
           # run install tests after non-ephemeral tests since it may cause the addon agent to be restarted
