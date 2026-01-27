@@ -915,7 +915,7 @@ k8s.io/utils/net
 k8s.io/utils/pointer
 k8s.io/utils/ptr
 k8s.io/utils/trace
-# open-cluster-management.io/addon-framework v1.1.0
+# open-cluster-management.io/addon-framework v1.1.2
 ## explicit; go 1.24.0
 open-cluster-management.io/addon-framework/pkg/addonfactory
 open-cluster-management.io/addon-framework/pkg/addonmanager
@@ -931,17 +931,21 @@ open-cluster-management.io/addon-framework/pkg/assets
 open-cluster-management.io/addon-framework/pkg/index
 open-cluster-management.io/addon-framework/pkg/lease
 open-cluster-management.io/addon-framework/pkg/utils
-# open-cluster-management.io/api v1.1.0
-## explicit; go 1.24.0
+# open-cluster-management.io/api v1.2.0
+## explicit; go 1.25.0
 open-cluster-management.io/api/addon/v1alpha1
+open-cluster-management.io/api/addon/v1beta1
 open-cluster-management.io/api/client/addon/clientset/versioned
 open-cluster-management.io/api/client/addon/clientset/versioned/scheme
 open-cluster-management.io/api/client/addon/clientset/versioned/typed/addon/v1alpha1
+open-cluster-management.io/api/client/addon/clientset/versioned/typed/addon/v1beta1
 open-cluster-management.io/api/client/addon/informers/externalversions
 open-cluster-management.io/api/client/addon/informers/externalversions/addon
 open-cluster-management.io/api/client/addon/informers/externalversions/addon/v1alpha1
+open-cluster-management.io/api/client/addon/informers/externalversions/addon/v1beta1
 open-cluster-management.io/api/client/addon/informers/externalversions/internalinterfaces
 open-cluster-management.io/api/client/addon/listers/addon/v1alpha1
+open-cluster-management.io/api/client/addon/listers/addon/v1beta1
 open-cluster-management.io/api/client/cluster/clientset/versioned
 open-cluster-management.io/api/client/cluster/clientset/versioned/scheme
 open-cluster-management.io/api/client/cluster/clientset/versioned/typed/cluster/v1
