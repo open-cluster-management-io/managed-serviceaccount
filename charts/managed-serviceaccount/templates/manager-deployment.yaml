@@ -1,3 +1,9 @@
+{{/*
+Deploy managed-serviceaccount-addon-manager when:
+1. hubDeployMode != AddOnTemplate: Full addon manager (addon-manager + controllers)
+2. clusterProfileCredSyncer == true: Controller manager (ClusterProfileCredSyncer only when hubDeployMode == AddOnTemplate)
+*/}}
+{{- if or (ne .Values.hubDeployMode "AddOnTemplate") .Values.featureGates.clusterProfileCredSyncer }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -33,3 +39,4 @@ spec:
             {{- if .Values.agentImagePullSecret }}
             - --agent-image-pull-secret={{ .Values.agentImagePullSecret }}
             {{- end}}
+{{- end }}

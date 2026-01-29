@@ -133,6 +133,7 @@ jobs:
             managed-serviceaccount charts/managed-serviceaccount/ \
             --set tag=latest \
             --set featureGates.ephemeralIdentity=true \
+            --set featureGates.clusterProfileCredSyncer=true \
             --set hubDeployMode=AddOnTemplate \
             --set targetCluster=loopback
       - name: Run e2e test

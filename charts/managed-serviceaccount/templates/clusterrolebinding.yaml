@@ -1,3 +1,9 @@
+{{/*
+Deploy managed-serviceaccount-addon-manager when:
+1. hubDeployMode != AddOnTemplate: Full addon manager (addon-manager + controllers)
+2. featureGates.clusterProfileCredSyncer == true: ClusterProfileCredSyncer only when hubDeployMode == AddOnTemplate
+*/}}
+{{- if or (ne .Values.hubDeployMode "AddOnTemplate") ((.Values.featureGates | default dict).clusterProfileCredSyncer) }}
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
@@ -10,3 +16,4 @@ subjects:
   - kind: ServiceAccount
     name: managed-serviceaccount
     namespace: {{ .Release.Namespace }}
+{{- end }}

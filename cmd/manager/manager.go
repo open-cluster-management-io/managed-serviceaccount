@@ -158,7 +158,9 @@ func (o *HubManagerOptions) Run() error {
 		os.Exit(1)
 	}
 
-	// Only set up addon manager when not in AddOnTemplate mode
+	// Setup controllers based on deployment mode:
+	// - Normal mode (!AddonTemplateMode): Setup addon manager + optional controllers
+	// - AddOnTemplate mode: Setup only ClusterProfileCredSyncer controller if feature gate enabled
 	var addonManager addonmanager.AddonManager
 	if !o.AddonTemplateMode {
 		addonManager, err = addonmanager.New(mgr.GetConfig())
@@ -248,7 +250,8 @@ func (o *HubManagerOptions) Run() error {
 		}
 	}
 
-	if features.FeatureGates.Enabled(features.ClusterProfileCredSyncer) || o.AddonTemplateMode {
+	// Setup ClusterProfileCredSyncer controller if feature gate is enabled
+	if features.FeatureGates.Enabled(features.ClusterProfileCredSyncer) {
 		if err := (controller.NewClusterProfileCredSyncer(
 			mgr.GetCache(),
 			mgr.GetClient(),

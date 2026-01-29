@@ -1,9 +1,14 @@
+{{/*
+Deploy managed-serviceaccount-addon-manager when:
+1. hubDeployMode != AddOnTemplate: Full addon manager (addon-manager + controllers)
+2. featureGates.clusterProfileCredSyncer == true: ClusterProfileCredSyncer only when hubDeployMode == AddOnTemplate
+*/}}
+{{- if or (ne .Values.hubDeployMode "AddOnTemplate") ((.Values.featureGates | default dict).clusterProfileCredSyncer) }}
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
   name: open-cluster-management:managed-serviceaccount:addon-manager
 rules:
-  # Permissions for ClusterProfileCredSyncer (always needed)
   - apiGroups:
       - authentication.open-cluster-management.io
     resources:
@@ -18,7 +23,7 @@ rules:
       {{- if (.Values.featureGates | default dict).ephemeralIdentity }}
       - delete
       {{- end }}
-  {{- if or (eq .Values.hubDeployMode "AddOnTemplate") ((.Values.featureGates | default dict).clusterProfileCredSyncer) }}
+  {{- if (.Values.featureGates | default dict).clusterProfileCredSyncer }}
   - apiGroups:
       - multicluster.x-k8s.io
     resources:
@@ -38,7 +43,7 @@ rules:
       - watch
       - create
       - update
-      {{- if or (eq .Values.hubDeployMode "AddOnTemplate") ((.Values.featureGates | default dict).clusterProfileCredSyncer) }}
+      {{- if (.Values.featureGates | default dict).clusterProfileCredSyncer }}
       - delete
       {{- end }}
   - apiGroups:
@@ -164,4 +169,5 @@ rules:
       - create
       - update
       - patch
+{{- end }}
 {{- end }}
