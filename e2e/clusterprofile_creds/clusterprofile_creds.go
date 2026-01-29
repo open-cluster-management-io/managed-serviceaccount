@@ -19,6 +19,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	clientauthenticationv1 "k8s.io/client-go/pkg/apis/clientauthentication/v1"
+	clusterv1 "open-cluster-management.io/api/cluster/v1"
 	authv1beta1 "open-cluster-management.io/managed-serviceaccount/apis/authentication/v1beta1"
 	"open-cluster-management.io/managed-serviceaccount/e2e/framework"
 	"open-cluster-management.io/managed-serviceaccount/pkg/addon/manager/controller"
@@ -40,22 +41,40 @@ var _ = Describe("ClusterProfile Credentials Sync and Plugin Test", Label("clust
 
 		Context("ClusterProfileCredSyncer Controller", func() {
 			var clusterProfile *cpv1alpha1.ClusterProfile
+			var clusterProfileNamespace string
+			var testCounter int
 
 			BeforeEach(func() {
-				By("Creating ClusterProfile in open-cluster-management namespace")
+				// Create a unique namespace for this test's ClusterProfile (unique per test iteration)
+				testCounter++
+				clusterProfileNamespace = fmt.Sprintf("cp-test-%s-%d", framework.RunID, testCounter)
+				By("Creating namespace for ClusterProfile: " + clusterProfileNamespace)
+				ns := &corev1.Namespace{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: clusterProfileNamespace,
+					},
+				}
+				err := f.HubRuntimeClient().Create(context.TODO(), ns)
+				Expect(err).NotTo(HaveOccurred())
+
+				By("Creating ClusterProfile in dynamic test namespace")
 				clusterProfile = &cpv1alpha1.ClusterProfile{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      targetClusterName,
-						Namespace: controller.ClusterProfileNamespace,
+						Namespace: clusterProfileNamespace,
+						Labels: map[string]string{
+							cpv1alpha1.LabelClusterManagerKey: controller.ClusterProfileManagerName,
+							clusterv1.ClusterNameLabelKey:     targetClusterName,
+						},
 					},
 					Spec: cpv1alpha1.ClusterProfileSpec{
-						DisplayName: "E2E Test Cluster",
+						DisplayName: targetClusterName,
 						ClusterManager: cpv1alpha1.ClusterManager{
-							Name: "test-manager",
+							Name: controller.ClusterProfileManagerName,
 						},
 					},
 				}
-				err := f.HubRuntimeClient().Create(context.TODO(), clusterProfile)
+				err = f.HubRuntimeClient().Create(context.TODO(), clusterProfile)
 				Expect(err).NotTo(HaveOccurred())
 			})
 
@@ -71,9 +90,30 @@ var _ = Describe("ClusterProfile Credentials Sync and Plugin Test", Label("clust
 					Eventually(func() bool {
 						cp := &cpv1alpha1.ClusterProfile{}
 						err := f.HubRuntimeClient().Get(context.TODO(), types.NamespacedName{
-							Namespace: controller.ClusterProfileNamespace,
+							Namespace: clusterProfileNamespace,
 							Name:      targetClusterName,
 						}, cp)
+						return apierrors.IsNotFound(err)
+					}).WithTimeout(pollTimeout).WithPolling(pollInterval).Should(BeTrue())
+				}
+				By("Cleaning up ClusterProfile namespace")
+				if clusterProfileNamespace != "" {
+					ns := &corev1.Namespace{
+						ObjectMeta: metav1.ObjectMeta{
+							Name: clusterProfileNamespace,
+						},
+					}
+					err := f.HubRuntimeClient().Delete(context.TODO(), ns)
+					if err != nil && !apierrors.IsNotFound(err) {
+						Expect(err).NotTo(HaveOccurred())
+					}
+
+					// Wait for namespace to be fully deleted
+					Eventually(func() bool {
+						ns := &corev1.Namespace{}
+						err := f.HubRuntimeClient().Get(context.TODO(), types.NamespacedName{
+							Name: clusterProfileNamespace,
+						}, ns)
 						return apierrors.IsNotFound(err)
 					}).WithTimeout(pollTimeout).WithPolling(pollInterval).Should(BeTrue())
 				}
@@ -85,6 +125,9 @@ var _ = Describe("ClusterProfile Credentials Sync and Plugin Test", Label("clust
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace: targetClusterName,
 						Name:      msaName1,
+						Labels: map[string]string{
+							controller.LabelKeyClusterProfileSync: "true",
+						},
 					},
 					Spec: authv1beta1.ManagedServiceAccountSpec{
 						Rotation: authv1beta1.ManagedServiceAccountRotation{
@@ -131,17 +174,14 @@ var _ = Describe("ClusterProfile Credentials Sync and Plugin Test", Label("clust
 				Eventually(func() bool {
 					syncedSecret := &corev1.Secret{}
 					err := f.HubRuntimeClient().Get(context.TODO(), types.NamespacedName{
-						Namespace: controller.ClusterProfileNamespace,
+						Namespace: clusterProfileNamespace,
 						Name:      syncedSecretName,
 					}, syncedSecret)
 					if err != nil {
 						return false
 					}
 
-					// Verify secret has correct labels
-					if syncedSecret.Labels[controller.LabelKeyClusterProfileCreds] != "true" {
-						return false
-					}
+					// Verify secret has correct label
 					expectedSyncedFrom := fmt.Sprintf("%s-%s", targetClusterName, msaName1)
 					if syncedSecret.Labels[controller.LabelKeySyncedFrom] != expectedSyncedFrom {
 						return false
@@ -180,6 +220,9 @@ var _ = Describe("ClusterProfile Credentials Sync and Plugin Test", Label("clust
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace: targetClusterName,
 						Name:      msaName1,
+						Labels: map[string]string{
+							controller.LabelKeyClusterProfileSync: "true",
+						},
 					},
 					Spec: authv1beta1.ManagedServiceAccountSpec{
 						Rotation: authv1beta1.ManagedServiceAccountRotation{
@@ -194,6 +237,9 @@ var _ = Describe("ClusterProfile Credentials Sync and Plugin Test", Label("clust
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace: targetClusterName,
 						Name:      msaName2,
+						Labels: map[string]string{
+							controller.LabelKeyClusterProfileSync: "true",
+						},
 					},
 					Spec: authv1beta1.ManagedServiceAccountSpec{
 						Rotation: authv1beta1.ManagedServiceAccountRotation{
@@ -211,13 +257,13 @@ var _ = Describe("ClusterProfile Credentials Sync and Plugin Test", Label("clust
 				Eventually(func() bool {
 					secret1 := &corev1.Secret{}
 					err1 := f.HubRuntimeClient().Get(context.TODO(), types.NamespacedName{
-						Namespace: controller.ClusterProfileNamespace,
+						Namespace: clusterProfileNamespace,
 						Name:      syncedSecretName1,
 					}, secret1)
 
 					secret2 := &corev1.Secret{}
 					err2 := f.HubRuntimeClient().Get(context.TODO(), types.NamespacedName{
-						Namespace: controller.ClusterProfileNamespace,
+						Namespace: clusterProfileNamespace,
 						Name:      syncedSecretName2,
 					}, secret2)
 
@@ -239,6 +285,9 @@ var _ = Describe("ClusterProfile Credentials Sync and Plugin Test", Label("clust
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace: targetClusterName,
 						Name:      msaName1,
+						Labels: map[string]string{
+							controller.LabelKeyClusterProfileSync: "true",
+						},
 					},
 					Spec: authv1beta1.ManagedServiceAccountSpec{
 						Rotation: authv1beta1.ManagedServiceAccountRotation{
@@ -254,7 +303,7 @@ var _ = Describe("ClusterProfile Credentials Sync and Plugin Test", Label("clust
 				Eventually(func() bool {
 					secret := &corev1.Secret{}
 					err := f.HubRuntimeClient().Get(context.TODO(), types.NamespacedName{
-						Namespace: controller.ClusterProfileNamespace,
+						Namespace: clusterProfileNamespace,
 						Name:      syncedSecretName,
 					}, secret)
 					return err == nil && len(secret.Data[corev1.ServiceAccountTokenKey]) > 0
@@ -268,7 +317,7 @@ var _ = Describe("ClusterProfile Credentials Sync and Plugin Test", Label("clust
 				Eventually(func() bool {
 					secret := &corev1.Secret{}
 					err := f.HubRuntimeClient().Get(context.TODO(), types.NamespacedName{
-						Namespace: controller.ClusterProfileNamespace,
+						Namespace: clusterProfileNamespace,
 						Name:      syncedSecretName,
 					}, secret)
 					return apierrors.IsNotFound(err)
@@ -281,6 +330,9 @@ var _ = Describe("ClusterProfile Credentials Sync and Plugin Test", Label("clust
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace: targetClusterName,
 						Name:      msaName1,
+						Labels: map[string]string{
+							controller.LabelKeyClusterProfileSync: "true",
+						},
 					},
 					Spec: authv1beta1.ManagedServiceAccountSpec{
 						Rotation: authv1beta1.ManagedServiceAccountRotation{
@@ -296,7 +348,7 @@ var _ = Describe("ClusterProfile Credentials Sync and Plugin Test", Label("clust
 				Eventually(func() bool {
 					secret := &corev1.Secret{}
 					err := f.HubRuntimeClient().Get(context.TODO(), types.NamespacedName{
-						Namespace: controller.ClusterProfileNamespace,
+						Namespace: clusterProfileNamespace,
 						Name:      syncedSecretName,
 					}, secret)
 					return err == nil && len(secret.Data[corev1.ServiceAccountTokenKey]) > 0
@@ -310,7 +362,7 @@ var _ = Describe("ClusterProfile Credentials Sync and Plugin Test", Label("clust
 				Eventually(func() bool {
 					secret := &corev1.Secret{}
 					err := f.HubRuntimeClient().Get(context.TODO(), types.NamespacedName{
-						Namespace: controller.ClusterProfileNamespace,
+						Namespace: clusterProfileNamespace,
 						Name:      syncedSecretName,
 					}, secret)
 					return apierrors.IsNotFound(err)
@@ -332,6 +384,9 @@ var _ = Describe("ClusterProfile Credentials Sync and Plugin Test", Label("clust
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace: targetClusterName,
 						Name:      msaName1,
+						Labels: map[string]string{
+							controller.LabelKeyClusterProfileSync: "true",
+						},
 					},
 					Spec: authv1beta1.ManagedServiceAccountSpec{
 						Rotation: authv1beta1.ManagedServiceAccountRotation{
@@ -348,7 +403,7 @@ var _ = Describe("ClusterProfile Credentials Sync and Plugin Test", Label("clust
 				Eventually(func() bool {
 					secret := &corev1.Secret{}
 					err := f.HubRuntimeClient().Get(context.TODO(), types.NamespacedName{
-						Namespace: controller.ClusterProfileNamespace,
+						Namespace: clusterProfileNamespace,
 						Name:      syncedSecretName,
 					}, secret)
 					if err == nil && len(secret.Data[corev1.ServiceAccountTokenKey]) > 0 {
@@ -381,7 +436,7 @@ var _ = Describe("ClusterProfile Credentials Sync and Plugin Test", Label("clust
 				Eventually(func() bool {
 					secret := &corev1.Secret{}
 					err := f.HubRuntimeClient().Get(context.TODO(), types.NamespacedName{
-						Namespace: controller.ClusterProfileNamespace,
+						Namespace: clusterProfileNamespace,
 						Name:      syncedSecretName,
 					}, secret)
 					if err != nil {
@@ -403,6 +458,9 @@ var _ = Describe("ClusterProfile Credentials Sync and Plugin Test", Label("clust
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace: targetClusterName,
 						Name:      msaName1,
+						Labels: map[string]string{
+							controller.LabelKeyClusterProfileSync: "true",
+						},
 					},
 					Spec: authv1beta1.ManagedServiceAccountSpec{
 						Rotation: authv1beta1.ManagedServiceAccountRotation{
@@ -431,7 +489,7 @@ var _ = Describe("ClusterProfile Credentials Sync and Plugin Test", Label("clust
 					// Verify synced secret exists with token
 					syncedSecret := &corev1.Secret{}
 					err = f.HubRuntimeClient().Get(context.TODO(), types.NamespacedName{
-						Namespace: controller.ClusterProfileNamespace,
+						Namespace: clusterProfileNamespace,
 						Name:      syncedSecretName,
 					}, syncedSecret)
 					if err == nil && len(syncedSecret.Data[corev1.ServiceAccountTokenKey]) > 0 {
@@ -459,7 +517,7 @@ var _ = Describe("ClusterProfile Credentials Sync and Plugin Test", Label("clust
 				Eventually(func() bool {
 					syncedSecret := &corev1.Secret{}
 					err := f.HubRuntimeClient().Get(context.TODO(), types.NamespacedName{
-						Namespace: controller.ClusterProfileNamespace,
+						Namespace: clusterProfileNamespace,
 						Name:      syncedSecretName,
 					}, syncedSecret)
 					if err != nil {
@@ -485,6 +543,9 @@ var _ = Describe("ClusterProfile Credentials Sync and Plugin Test", Label("clust
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace: targetClusterName,
 						Name:      msaName1,
+						Labels: map[string]string{
+							controller.LabelKeyClusterProfileSync: "true",
+						},
 					},
 					Spec: authv1beta1.ManagedServiceAccountSpec{
 						Rotation: authv1beta1.ManagedServiceAccountRotation{
@@ -511,7 +572,7 @@ var _ = Describe("ClusterProfile Credentials Sync and Plugin Test", Label("clust
 
 					syncedSecret := &corev1.Secret{}
 					err = f.HubRuntimeClient().Get(context.TODO(), types.NamespacedName{
-						Namespace: controller.ClusterProfileNamespace,
+						Namespace: clusterProfileNamespace,
 						Name:      syncedSecretName,
 					}, syncedSecret)
 					return err == nil && len(syncedSecret.Data[corev1.ServiceAccountTokenKey]) > 0
@@ -543,7 +604,7 @@ var _ = Describe("ClusterProfile Credentials Sync and Plugin Test", Label("clust
 				Eventually(func() bool {
 					syncedSecret := &corev1.Secret{}
 					err := f.HubRuntimeClient().Get(context.TODO(), types.NamespacedName{
-						Namespace: controller.ClusterProfileNamespace,
+						Namespace: clusterProfileNamespace,
 						Name:      syncedSecretName,
 					}, syncedSecret)
 					if err != nil {
@@ -562,8 +623,22 @@ var _ = Describe("ClusterProfile Credentials Sync and Plugin Test", Label("clust
 		Context("ClusterProfile Credentials Plugin", func() {
 			var clusterProfile *cpv1alpha1.ClusterProfile
 			var pluginPath string
+			var clusterProfileNamespace string
+			var testCounter int
 
 			BeforeEach(func() {
+				// Create a unique namespace for this test's ClusterProfile (unique per test iteration)
+				testCounter++
+				clusterProfileNamespace = fmt.Sprintf("cp-plugin-test-%s-%d", framework.RunID, testCounter)
+				By("Creating namespace for ClusterProfile: " + clusterProfileNamespace)
+				ns := &corev1.Namespace{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: clusterProfileNamespace,
+					},
+				}
+				err := f.HubRuntimeClient().Create(context.TODO(), ns)
+				Expect(err).NotTo(HaveOccurred())
+
 				By("Building the credentials plugin binary")
 				tmpDir := GinkgoT().TempDir()
 				pluginPath = filepath.Join(tmpDir, "cp-creds")
@@ -575,12 +650,16 @@ var _ = Describe("ClusterProfile Credentials Sync and Plugin Test", Label("clust
 				clusterProfile = &cpv1alpha1.ClusterProfile{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      targetClusterName,
-						Namespace: controller.ClusterProfileNamespace,
+						Namespace: clusterProfileNamespace,
+						Labels: map[string]string{
+							cpv1alpha1.LabelClusterManagerKey: controller.ClusterProfileManagerName,
+							clusterv1.ClusterNameLabelKey:     targetClusterName,
+						},
 					},
 					Spec: cpv1alpha1.ClusterProfileSpec{
-						DisplayName: "E2E Test Cluster",
+						DisplayName: targetClusterName,
 						ClusterManager: cpv1alpha1.ClusterManager{
-							Name: "test-manager",
+							Name: controller.ClusterProfileManagerName,
 						},
 					},
 				}
@@ -596,6 +675,27 @@ var _ = Describe("ClusterProfile Credentials Sync and Plugin Test", Label("clust
 						Expect(err).NotTo(HaveOccurred())
 					}
 				}
+				By("Cleaning up ClusterProfile namespace")
+				if clusterProfileNamespace != "" {
+					ns := &corev1.Namespace{
+						ObjectMeta: metav1.ObjectMeta{
+							Name: clusterProfileNamespace,
+						},
+					}
+					err := f.HubRuntimeClient().Delete(context.TODO(), ns)
+					if err != nil && !apierrors.IsNotFound(err) {
+						Expect(err).NotTo(HaveOccurred())
+					}
+
+					// Wait for namespace to be fully deleted
+					Eventually(func() bool {
+						ns := &corev1.Namespace{}
+						err := f.HubRuntimeClient().Get(context.TODO(), types.NamespacedName{
+							Name: clusterProfileNamespace,
+						}, ns)
+						return apierrors.IsNotFound(err)
+					}).WithTimeout(pollTimeout).WithPolling(pollInterval).Should(BeTrue())
+				}
 			})
 
 			It("Should retrieve token from synced credential secret", func() {
@@ -604,6 +704,9 @@ var _ = Describe("ClusterProfile Credentials Sync and Plugin Test", Label("clust
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace: targetClusterName,
 						Name:      msaName1,
+						Labels: map[string]string{
+							controller.LabelKeyClusterProfileSync: "true",
+						},
 					},
 					Spec: authv1beta1.ManagedServiceAccountSpec{
 						Rotation: authv1beta1.ManagedServiceAccountRotation{
@@ -623,7 +726,7 @@ var _ = Describe("ClusterProfile Credentials Sync and Plugin Test", Label("clust
 				Eventually(func() bool {
 					secret := &corev1.Secret{}
 					err := f.HubRuntimeClient().Get(context.TODO(), types.NamespacedName{
-						Namespace: controller.ClusterProfileNamespace,
+						Namespace: clusterProfileNamespace,
 						Name:      syncedSecretName,
 					}, secret)
 					if err == nil && len(secret.Data[corev1.ServiceAccountTokenKey]) > 0 {
@@ -658,6 +761,7 @@ var _ = Describe("ClusterProfile Credentials Sync and Plugin Test", Label("clust
 				cmd := exec.Command(pluginPath, "--managed-serviceaccount="+msaName1)
 				cmd.Stdin = nil
 				cmd.Env = append(os.Environ(),
+					"NAMESPACE="+clusterProfileNamespace,
 					"KUBERNETES_EXEC_INFO="+string(execCredJSON),
 				)
 

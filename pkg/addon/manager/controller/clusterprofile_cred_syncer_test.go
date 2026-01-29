@@ -12,6 +12,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
+	clusterv1 "open-cluster-management.io/api/cluster/v1"
 	authv1beta1 "open-cluster-management.io/managed-serviceaccount/apis/authentication/v1beta1"
 	"open-cluster-management.io/managed-serviceaccount/pkg/common"
 	cpv1alpha1 "sigs.k8s.io/cluster-inventory-api/apis/v1alpha1"
@@ -20,6 +21,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
+
+// testClusterProfileNamespace is the namespace used for ClusterProfiles in tests
+const testClusterProfileNamespace = "test-ns"
 
 func TestClusterProfileCredSyncerReconcile(t *testing.T) {
 	testCases := []struct {
@@ -33,8 +37,7 @@ func TestClusterProfileCredSyncerReconcile(t *testing.T) {
 			name:           "ClusterProfile not found - owner reference handles cleanup",
 			clusterProfile: nil,
 			existingSecrets: []corev1.Secret{
-				*newSecret(ClusterProfileNamespace, "cluster1-msa1").
-					withLabel(LabelKeyClusterProfileCreds, "true").
+				*newSecret(testClusterProfileNamespace, "cluster1-msa1").
 					withLabel(LabelKeySyncedFrom, "cluster1-msa1").
 					build(),
 			},
@@ -45,7 +48,7 @@ func TestClusterProfileCredSyncerReconcile(t *testing.T) {
 		},
 		{
 			name: "Sync credentials from ManagedServiceAccounts to ClusterProfile namespace",
-			clusterProfile: newClusterProfile(ClusterProfileNamespace, "cluster1").
+			clusterProfile: newClusterProfile(testClusterProfileNamespace, "cluster1").
 				build(),
 			msaList: []authv1beta1.ManagedServiceAccount{
 				*newManagedServiceAccountWithToken("cluster1", "msa1").build(),
@@ -59,12 +62,11 @@ func TestClusterProfileCredSyncerReconcile(t *testing.T) {
 				// Verify synced credentials exist in ClusterProfile namespace
 				cred1 := &corev1.Secret{}
 				err := hubClient.Get(context.TODO(), types.NamespacedName{
-					Namespace: ClusterProfileNamespace,
+					Namespace: testClusterProfileNamespace,
 					Name:      "cluster1-msa1",
 				}, cred1)
 				assert.NoError(t, err, "synced credential cluster1-msa1 should exist")
 				assert.Equal(t, "cluster1-msa1", cred1.Labels[LabelKeySyncedFrom])
-				assert.Equal(t, "true", cred1.Labels[LabelKeyClusterProfileCreds])
 				// Verify all data is copied
 				assert.NotEmpty(t, cred1.Data[corev1.ServiceAccountTokenKey])
 				assert.NotEmpty(t, cred1.Data[corev1.ServiceAccountRootCAKey])
@@ -75,12 +77,11 @@ func TestClusterProfileCredSyncerReconcile(t *testing.T) {
 
 				cred2 := &corev1.Secret{}
 				err = hubClient.Get(context.TODO(), types.NamespacedName{
-					Namespace: ClusterProfileNamespace,
+					Namespace: testClusterProfileNamespace,
 					Name:      "cluster1-msa2",
 				}, cred2)
 				assert.NoError(t, err, "synced credential cluster1-msa2 should exist")
 				assert.Equal(t, "cluster1-msa2", cred2.Labels[LabelKeySyncedFrom])
-				assert.Equal(t, "true", cred2.Labels[LabelKeyClusterProfileCreds])
 				// Verify owner reference is set
 				assert.Len(t, cred2.OwnerReferences, 1)
 				assert.Equal(t, "cluster1", cred2.OwnerReferences[0].Name)
@@ -88,7 +89,7 @@ func TestClusterProfileCredSyncerReconcile(t *testing.T) {
 		},
 		{
 			name: "Update existing synced credential when token changes",
-			clusterProfile: newClusterProfile(ClusterProfileNamespace, "cluster1").
+			clusterProfile: newClusterProfile(testClusterProfileNamespace, "cluster1").
 				build(),
 			msaList: []authv1beta1.ManagedServiceAccount{
 				*newManagedServiceAccountWithToken("cluster1", "msa1").build(),
@@ -97,8 +98,7 @@ func TestClusterProfileCredSyncerReconcile(t *testing.T) {
 				*newTokenSecret("cluster1", "msa1").
 					withToken([]byte("new-token-value")).
 					build(),
-				*newSecret(ClusterProfileNamespace, "cluster1-msa1").
-					withLabel(LabelKeyClusterProfileCreds, "true").
+				*newSecret(testClusterProfileNamespace, "cluster1-msa1").
 					withLabel(LabelKeySyncedFrom, "cluster1-msa1").
 					withData(corev1.ServiceAccountTokenKey, []byte("old-token-value")).
 					build(),
@@ -106,7 +106,7 @@ func TestClusterProfileCredSyncerReconcile(t *testing.T) {
 			validateFunc: func(t *testing.T, hubClient client.Client) {
 				cred := &corev1.Secret{}
 				err := hubClient.Get(context.TODO(), types.NamespacedName{
-					Namespace: ClusterProfileNamespace,
+					Namespace: testClusterProfileNamespace,
 					Name:      "cluster1-msa1",
 				}, cred)
 				assert.NoError(t, err)
@@ -118,30 +118,28 @@ func TestClusterProfileCredSyncerReconcile(t *testing.T) {
 		},
 		{
 			name: "Cleanup orphaned credentials when ManagedServiceAccount is deleted",
-			clusterProfile: newClusterProfile(ClusterProfileNamespace, "cluster1").
+			clusterProfile: newClusterProfile(testClusterProfileNamespace, "cluster1").
 				build(),
 			msaList: []authv1beta1.ManagedServiceAccount{
 				*newManagedServiceAccountWithToken("cluster1", "msa1").build(),
 			},
 			existingSecrets: []corev1.Secret{
 				*newTokenSecret("cluster1", "msa1").build(),
-				*newSecret(ClusterProfileNamespace, "cluster1-msa1").
-					withLabel(LabelKeyClusterProfileCreds, "true").
+				*newSecret(testClusterProfileNamespace, "cluster1-msa1").
 					withLabel(LabelKeySyncedFrom, "cluster1-msa1").
-					withOwnerReference(newClusterProfile(ClusterProfileNamespace, "cluster1").build()).
+					withOwnerReference(newClusterProfile(testClusterProfileNamespace, "cluster1").build()).
 					build(),
 				// Orphaned credential from deleted ManagedServiceAccount
-				*newSecret(ClusterProfileNamespace, "cluster1-deleted-msa").
-					withLabel(LabelKeyClusterProfileCreds, "true").
+				*newSecret(testClusterProfileNamespace, "cluster1-deleted-msa").
 					withLabel(LabelKeySyncedFrom, "cluster1-deleted-msa").
-					withOwnerReference(newClusterProfile(ClusterProfileNamespace, "cluster1").build()).
+					withOwnerReference(newClusterProfile(testClusterProfileNamespace, "cluster1").build()).
 					build(),
 			},
 			validateFunc: func(t *testing.T, hubClient client.Client) {
 				// Valid synced credential should exist
 				cred := &corev1.Secret{}
 				err := hubClient.Get(context.TODO(), types.NamespacedName{
-					Namespace: ClusterProfileNamespace,
+					Namespace: testClusterProfileNamespace,
 					Name:      "cluster1-msa1",
 				}, cred)
 				assert.NoError(t, err, "valid synced credential should exist")
@@ -149,7 +147,7 @@ func TestClusterProfileCredSyncerReconcile(t *testing.T) {
 				// Orphaned credential should be deleted
 				orphanedCred := &corev1.Secret{}
 				err = hubClient.Get(context.TODO(), types.NamespacedName{
-					Namespace: ClusterProfileNamespace,
+					Namespace: testClusterProfileNamespace,
 					Name:      "cluster1-deleted-msa",
 				}, orphanedCred)
 				assert.True(t, apierrors.IsNotFound(err), "orphaned credential should be deleted")
@@ -157,7 +155,7 @@ func TestClusterProfileCredSyncerReconcile(t *testing.T) {
 		},
 		{
 			name: "ManagedServiceAccount without token secret - no sync",
-			clusterProfile: newClusterProfile(ClusterProfileNamespace, "cluster1").
+			clusterProfile: newClusterProfile(testClusterProfileNamespace, "cluster1").
 				build(),
 			msaList: []authv1beta1.ManagedServiceAccount{
 				// ManagedServiceAccount without token secret ref
@@ -165,6 +163,9 @@ func TestClusterProfileCredSyncerReconcile(t *testing.T) {
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "msa-no-token",
 						Namespace: "cluster1",
+						Labels: map[string]string{
+							LabelKeyClusterProfileSync: "true",
+						},
 					},
 					Status: authv1beta1.ManagedServiceAccountStatus{
 						TokenSecretRef: nil,
@@ -173,14 +174,53 @@ func TestClusterProfileCredSyncerReconcile(t *testing.T) {
 			},
 			validateFunc: func(t *testing.T, hubClient client.Client) {
 				secretList := &corev1.SecretList{}
-				err := hubClient.List(context.TODO(), secretList, client.InNamespace(ClusterProfileNamespace))
+				err := hubClient.List(context.TODO(), secretList, client.InNamespace(testClusterProfileNamespace))
 				assert.NoError(t, err)
 				assert.Equal(t, 0, len(secretList.Items), "no credentials should be synced")
 			},
 		},
 		{
+			name: "ManagedServiceAccount without sync label - no sync",
+			clusterProfile: newClusterProfile(testClusterProfileNamespace, "cluster1").
+				build(),
+			msaList: []authv1beta1.ManagedServiceAccount{
+				// ManagedServiceAccount without the required sync label
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "msa-no-label",
+						Namespace: "cluster1",
+						// No LabelKeyClusterProfileSync label
+					},
+					Status: authv1beta1.ManagedServiceAccountStatus{
+						TokenSecretRef: &authv1beta1.SecretRef{
+							Name: "msa-no-label",
+						},
+					},
+				},
+			},
+			existingSecrets: []corev1.Secret{
+				*newTokenSecret("cluster1", "msa-no-label").build(),
+			},
+			validateFunc: func(t *testing.T, hubClient client.Client) {
+				// No credential should be synced because MSA lacks the sync label
+				secretList := &corev1.SecretList{}
+				err := hubClient.List(context.TODO(), secretList,
+					client.InNamespace(testClusterProfileNamespace),
+				)
+				assert.NoError(t, err)
+				// Filter secrets with LabelKeySyncedFrom
+				syncedSecrets := 0
+				for _, secret := range secretList.Items {
+					if _, ok := secret.Labels[LabelKeySyncedFrom]; ok {
+						syncedSecrets++
+					}
+				}
+				assert.Equal(t, 0, syncedSecrets, "no credentials should be synced without sync label")
+			},
+		},
+		{
 			name: "Do not delete synced credentials owned by other ClusterProfiles",
-			clusterProfile: newClusterProfile(ClusterProfileNamespace, "cluster2").
+			clusterProfile: newClusterProfile(testClusterProfileNamespace, "cluster2").
 				build(),
 			msaList: []authv1beta1.ManagedServiceAccount{
 				*newManagedServiceAccountWithToken("cluster2", "msa2").build(),
@@ -189,24 +229,22 @@ func TestClusterProfileCredSyncerReconcile(t *testing.T) {
 				// Token secret for cluster2/msa2
 				*newTokenSecret("cluster2", "msa2").build(),
 				// Synced credential owned by cluster2 (current ClusterProfile)
-				*newSecret(ClusterProfileNamespace, "cluster2-msa2").
-					withLabel(LabelKeyClusterProfileCreds, "true").
+				*newSecret(testClusterProfileNamespace, "cluster2-msa2").
 					withLabel(LabelKeySyncedFrom, "cluster2-msa2").
-					withOwnerReference(newClusterProfile(ClusterProfileNamespace, "cluster2").build()).
+					withOwnerReference(newClusterProfile(testClusterProfileNamespace, "cluster2").build()).
 					build(),
 				// Synced credential owned by cluster1 (different ClusterProfile)
 				// This should NOT be deleted when reconciling cluster2
-				*newSecret(ClusterProfileNamespace, "cluster1-msa1").
-					withLabel(LabelKeyClusterProfileCreds, "true").
+				*newSecret(testClusterProfileNamespace, "cluster1-msa1").
 					withLabel(LabelKeySyncedFrom, "cluster1-msa1").
-					withOwnerReference(newClusterProfile(ClusterProfileNamespace, "cluster1").build()).
+					withOwnerReference(newClusterProfile(testClusterProfileNamespace, "cluster1").build()).
 					build(),
 			},
 			validateFunc: func(t *testing.T, hubClient client.Client) {
 				// Synced credential for cluster2-msa2 should exist
 				cred2 := &corev1.Secret{}
 				err := hubClient.Get(context.TODO(), types.NamespacedName{
-					Namespace: ClusterProfileNamespace,
+					Namespace: testClusterProfileNamespace,
 					Name:      "cluster2-msa2",
 				}, cred2)
 				assert.NoError(t, err, "cluster2-msa2 should exist")
@@ -215,7 +253,7 @@ func TestClusterProfileCredSyncerReconcile(t *testing.T) {
 				// (not deleted by cluster2 reconciliation)
 				cred1 := &corev1.Secret{}
 				err = hubClient.Get(context.TODO(), types.NamespacedName{
-					Namespace: ClusterProfileNamespace,
+					Namespace: testClusterProfileNamespace,
 					Name:      "cluster1-msa1",
 				}, cred1)
 				assert.NoError(t, err, "cluster1-msa1 should NOT be deleted by cluster2 reconciliation")
@@ -260,7 +298,7 @@ func TestClusterProfileCredSyncerReconcile(t *testing.T) {
 
 			// Determine the reconcile request based on cluster profile
 			reqName := "cluster1"
-			reqNamespace := ClusterProfileNamespace
+			reqNamespace := testClusterProfileNamespace
 			if tc.clusterProfile != nil {
 				reqName = tc.clusterProfile.Name
 				reqNamespace = tc.clusterProfile.Namespace
@@ -318,17 +356,33 @@ func (f *clusterProfileFakeCache) Get(ctx context.Context, key client.ObjectKey,
 func (f *clusterProfileFakeCache) List(ctx context.Context, list client.ObjectList, opts ...client.ListOption) error {
 	switch v := list.(type) {
 	case *authv1beta1.ManagedServiceAccountList:
-		// Filter by namespace if specified
+		// Filter by namespace and labels if specified
 		namespace := ""
+		matchLabels := map[string]string{}
 		for _, opt := range opts {
 			if nsOpt, ok := opt.(client.InNamespace); ok {
 				namespace = string(nsOpt)
+			}
+			if labelOpt, ok := opt.(client.MatchingLabels); ok {
+				matchLabels = labelOpt
 			}
 		}
 
 		filteredMSAs := []authv1beta1.ManagedServiceAccount{}
 		for _, msa := range f.msaList {
-			if namespace == "" || msa.Namespace == namespace {
+			// Filter by namespace
+			if namespace != "" && msa.Namespace != namespace {
+				continue
+			}
+			// Filter by labels
+			matchesLabels := true
+			for k, v := range matchLabels {
+				if msa.Labels[k] != v {
+					matchesLabels = false
+					break
+				}
+			}
+			if matchesLabels {
 				filteredMSAs = append(filteredMSAs, msa)
 			}
 		}
@@ -366,6 +420,14 @@ func (f *clusterProfileFakeCache) List(ctx context.Context, list client.ObjectLi
 			}
 		}
 		v.Items = filteredSecrets
+		return nil
+	case *cpv1alpha1.ClusterProfileList:
+		// Return the cluster profile as a list
+		if f.clusterProfile != nil {
+			v.Items = []cpv1alpha1.ClusterProfile{*f.clusterProfile}
+		} else {
+			v.Items = []cpv1alpha1.ClusterProfile{}
+		}
 		return nil
 	}
 	return fmt.Errorf("unsupported list type: %T", list)
@@ -420,11 +482,16 @@ func newClusterProfile(namespace, name string) *clusterProfileBuilder {
 				Name:      name,
 				Namespace: namespace,
 				UID:       types.UID(fmt.Sprintf("test-uid-%s", name)),
+				Labels: map[string]string{
+					cpv1alpha1.LabelClusterManagerKey: ClusterProfileManagerName,
+					clusterv1.ClusterNameLabelKey:     name,
+				},
 			},
 			Spec: cpv1alpha1.ClusterProfileSpec{
 				ClusterManager: cpv1alpha1.ClusterManager{
-					Name: "test-manager",
+					Name: ClusterProfileManagerName,
 				},
+				DisplayName: name,
 			},
 		},
 	}
@@ -432,6 +499,49 @@ func newClusterProfile(namespace, name string) *clusterProfileBuilder {
 
 func (b *clusterProfileBuilder) build() *cpv1alpha1.ClusterProfile {
 	return b.cp
+}
+
+// multiClusterProfileFakeCache is a minimal fake cache for testing map functions
+// that need to list ClusterProfiles across multiple namespaces
+type multiClusterProfileFakeCache struct {
+	clusterProfiles []cpv1alpha1.ClusterProfile
+}
+
+func (f *multiClusterProfileFakeCache) Get(ctx context.Context, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+	panic("not implemented - use for List only")
+}
+
+func (f *multiClusterProfileFakeCache) List(ctx context.Context, list client.ObjectList, opts ...client.ListOption) error {
+	switch v := list.(type) {
+	case *cpv1alpha1.ClusterProfileList:
+		v.Items = f.clusterProfiles
+		return nil
+	}
+	return fmt.Errorf("unsupported list type: %T", list)
+}
+
+func (f *multiClusterProfileFakeCache) GetInformer(ctx context.Context, obj client.Object, opts ...cache.InformerGetOption) (cache.Informer, error) {
+	panic("not implemented")
+}
+
+func (f *multiClusterProfileFakeCache) Start(ctx context.Context) error {
+	panic("not implemented")
+}
+
+func (f *multiClusterProfileFakeCache) WaitForCacheSync(ctx context.Context) bool {
+	panic("not implemented")
+}
+
+func (f *multiClusterProfileFakeCache) IndexField(ctx context.Context, obj client.Object, field string, extractValue client.IndexerFunc) error {
+	panic("not implemented")
+}
+
+func (f *multiClusterProfileFakeCache) GetInformerForKind(ctx context.Context, gvk schema.GroupVersionKind, opts ...cache.InformerGetOption) (cache.Informer, error) {
+	panic("not implemented")
+}
+
+func (f *multiClusterProfileFakeCache) RemoveInformer(ctx context.Context, obj client.Object) error {
+	panic("not implemented")
 }
 
 type msaBuilder struct {
@@ -444,6 +554,9 @@ func newManagedServiceAccountWithToken(namespace, name string) *msaBuilder {
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      name,
 				Namespace: namespace,
+				Labels: map[string]string{
+					LabelKeyClusterProfileSync: "true",
+				},
 			},
 			Status: authv1beta1.ManagedServiceAccountStatus{
 				TokenSecretRef: &authv1beta1.SecretRef{
@@ -538,33 +651,98 @@ func (b *secretBuilder) build() *corev1.Secret {
 }
 
 func TestMapManagedServiceAccountToClusterProfile(t *testing.T) {
-	reconciler := &ClusterProfileCredSyncer{}
-
-	msa := &authv1beta1.ManagedServiceAccount{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "test-msa",
-			Namespace: "cluster1",
+	testCases := []struct {
+		name             string
+		msa              *authv1beta1.ManagedServiceAccount
+		clusterProfiles  []cpv1alpha1.ClusterProfile
+		expectedRequests int
+	}{
+		{
+			name: "MSA maps to ClusterProfile in default namespace",
+			msa: &authv1beta1.ManagedServiceAccount{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-msa",
+					Namespace: "cluster1",
+					Labels: map[string]string{
+						LabelKeyClusterProfileSync: "true",
+					},
+				},
+			},
+			clusterProfiles: []cpv1alpha1.ClusterProfile{
+				*newClusterProfile(testClusterProfileNamespace, "cluster1").build(),
+			},
+			expectedRequests: 1,
+		},
+		{
+			name: "MSA maps to multiple ClusterProfiles in different namespaces",
+			msa: &authv1beta1.ManagedServiceAccount{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-msa",
+					Namespace: "cluster1",
+					Labels: map[string]string{
+						LabelKeyClusterProfileSync: "true",
+					},
+				},
+			},
+			clusterProfiles: []cpv1alpha1.ClusterProfile{
+				*newClusterProfile(testClusterProfileNamespace, "cluster1").build(),
+				*newClusterProfile("tenant-a", "cluster1").build(),
+				*newClusterProfile("tenant-b", "cluster1").build(),
+			},
+			expectedRequests: 3,
+		},
+		{
+			name: "MSA with no matching ClusterProfile returns empty",
+			msa: &authv1beta1.ManagedServiceAccount{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-msa",
+					Namespace: "cluster1",
+					Labels: map[string]string{
+						LabelKeyClusterProfileSync: "true",
+					},
+				},
+			},
+			clusterProfiles: []cpv1alpha1.ClusterProfile{
+				*newClusterProfile(testClusterProfileNamespace, "cluster2").build(),
+			},
+			expectedRequests: 0,
 		},
 	}
 
-	requests := reconciler.mapManagedServiceAccountToClusterProfile(context.Background(), msa)
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			fakeCache := &multiClusterProfileFakeCache{
+				clusterProfiles: tc.clusterProfiles,
+			}
+			reconciler := &ClusterProfileCredSyncer{
+				Cache: fakeCache,
+			}
 
-	assert.Len(t, requests, 1)
-	assert.Equal(t, ClusterProfileNamespace, requests[0].Namespace)
-	assert.Equal(t, "cluster1", requests[0].Name)
+			requests := reconciler.mapManagedServiceAccountToClusterProfile(context.Background(), tc.msa)
+
+			assert.Len(t, requests, tc.expectedRequests)
+			if tc.expectedRequests > 0 {
+				// Verify that all ClusterProfiles with name="cluster1" are in the requests
+				requestMap := make(map[string]bool)
+				for _, req := range requests {
+					assert.Equal(t, "cluster1", req.Name)
+					requestMap[req.Namespace] = true
+				}
+			}
+		})
+	}
 }
 
 func TestMapTokenSecretToClusterProfile(t *testing.T) {
-	reconciler := &ClusterProfileCredSyncer{}
-
 	testCases := []struct {
 		name             string
 		secret           client.Object
+		clusterProfiles  []cpv1alpha1.ClusterProfile
 		expectedRequests int
 		expectedName     string
 	}{
 		{
-			name: "Token secret with label maps to cluster profile",
+			name: "Token secret maps to ClusterProfile in default namespace",
 			secret: &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-token",
@@ -574,30 +752,61 @@ func TestMapTokenSecretToClusterProfile(t *testing.T) {
 					},
 				},
 			},
+			clusterProfiles: []cpv1alpha1.ClusterProfile{
+				*newClusterProfile(testClusterProfileNamespace, "cluster1").build(),
+			},
 			expectedRequests: 1,
 			expectedName:     "cluster1",
 		},
 		{
-			name: "Token secret without label still maps (predicate filters)",
+			name: "Token secret maps to multiple ClusterProfiles in different namespaces",
+			secret: &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-token",
+					Namespace: "cluster1",
+					Labels: map[string]string{
+						common.LabelKeyIsManagedServiceAccount: "true",
+					},
+				},
+			},
+			clusterProfiles: []cpv1alpha1.ClusterProfile{
+				*newClusterProfile(testClusterProfileNamespace, "cluster1").build(),
+				*newClusterProfile("tenant-a", "cluster1").build(),
+			},
+			expectedRequests: 2,
+			expectedName:     "cluster1",
+		},
+		{
+			name: "Token secret with no matching ClusterProfile returns empty",
 			secret: &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-token",
 					Namespace: "cluster2",
 				},
 			},
-			expectedRequests: 1,
-			expectedName:     "cluster2",
+			clusterProfiles: []cpv1alpha1.ClusterProfile{
+				*newClusterProfile(testClusterProfileNamespace, "cluster1").build(),
+			},
+			expectedRequests: 0,
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			fakeCache := &multiClusterProfileFakeCache{
+				clusterProfiles: tc.clusterProfiles,
+			}
+			reconciler := &ClusterProfileCredSyncer{
+				Cache: fakeCache,
+			}
+
 			requests := reconciler.mapTokenSecretToClusterProfile(context.Background(), tc.secret)
 
 			assert.Len(t, requests, tc.expectedRequests)
 			if tc.expectedRequests > 0 {
-				assert.Equal(t, ClusterProfileNamespace, requests[0].Namespace)
-				assert.Equal(t, tc.expectedName, requests[0].Name)
+				for _, req := range requests {
+					assert.Equal(t, tc.expectedName, req.Name)
+				}
 			}
 		})
 	}
@@ -616,7 +825,7 @@ func TestTokenRotationTriggersSync(t *testing.T) {
 	}{
 		{
 			name: "Token rotation updates synced credential",
-			clusterProfile: newClusterProfile(ClusterProfileNamespace, "cluster1").
+			clusterProfile: newClusterProfile(testClusterProfileNamespace, "cluster1").
 				build(),
 			msaList: []authv1beta1.ManagedServiceAccount{
 				*newManagedServiceAccountWithToken("cluster1", "msa1").build(),
@@ -627,8 +836,7 @@ func TestTokenRotationTriggersSync(t *testing.T) {
 					withToken([]byte("rotated-token-value")).
 					build(),
 				// Existing synced credential with old token
-				*newSecret(ClusterProfileNamespace, "cluster1-msa1").
-					withLabel(LabelKeyClusterProfileCreds, "true").
+				*newSecret(testClusterProfileNamespace, "cluster1-msa1").
 					withLabel(LabelKeySyncedFrom, "cluster1-msa1").
 					withData(corev1.ServiceAccountTokenKey, []byte("old-token-value")).
 					withData(corev1.ServiceAccountRootCAKey, []byte("test-ca")).
@@ -638,7 +846,7 @@ func TestTokenRotationTriggersSync(t *testing.T) {
 				// Verify the synced credential was updated with the new token
 				cred := &corev1.Secret{}
 				err := hubClient.Get(context.TODO(), types.NamespacedName{
-					Namespace: ClusterProfileNamespace,
+					Namespace: testClusterProfileNamespace,
 					Name:      "cluster1-msa1",
 				}, cred)
 				assert.NoError(t, err)
@@ -649,7 +857,7 @@ func TestTokenRotationTriggersSync(t *testing.T) {
 		},
 		{
 			name: "Multiple token rotations sync correctly",
-			clusterProfile: newClusterProfile(ClusterProfileNamespace, "cluster1").
+			clusterProfile: newClusterProfile(testClusterProfileNamespace, "cluster1").
 				build(),
 			msaList: []authv1beta1.ManagedServiceAccount{
 				*newManagedServiceAccountWithToken("cluster1", "msa1").build(),
@@ -665,13 +873,11 @@ func TestTokenRotationTriggersSync(t *testing.T) {
 					withToken([]byte("new-token-2")).
 					build(),
 				// Existing synced credentials with old tokens
-				*newSecret(ClusterProfileNamespace, "cluster1-msa1").
-					withLabel(LabelKeyClusterProfileCreds, "true").
+				*newSecret(testClusterProfileNamespace, "cluster1-msa1").
 					withLabel(LabelKeySyncedFrom, "cluster1-msa1").
 					withData(corev1.ServiceAccountTokenKey, []byte("old-token-1")).
 					build(),
-				*newSecret(ClusterProfileNamespace, "cluster1-msa2").
-					withLabel(LabelKeyClusterProfileCreds, "true").
+				*newSecret(testClusterProfileNamespace, "cluster1-msa2").
 					withLabel(LabelKeySyncedFrom, "cluster1-msa2").
 					withData(corev1.ServiceAccountTokenKey, []byte("old-token-2")).
 					build(),
@@ -680,7 +886,7 @@ func TestTokenRotationTriggersSync(t *testing.T) {
 				// Verify both credentials were updated
 				cred1 := &corev1.Secret{}
 				err := hubClient.Get(context.TODO(), types.NamespacedName{
-					Namespace: ClusterProfileNamespace,
+					Namespace: testClusterProfileNamespace,
 					Name:      "cluster1-msa1",
 				}, cred1)
 				assert.NoError(t, err)
@@ -688,7 +894,7 @@ func TestTokenRotationTriggersSync(t *testing.T) {
 
 				cred2 := &corev1.Secret{}
 				err = hubClient.Get(context.TODO(), types.NamespacedName{
-					Namespace: ClusterProfileNamespace,
+					Namespace: testClusterProfileNamespace,
 					Name:      "cluster1-msa2",
 				}, cred2)
 				assert.NoError(t, err)

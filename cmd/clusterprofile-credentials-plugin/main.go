@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/spf13/pflag"
 	corev1 "k8s.io/api/core/v1"
@@ -17,14 +18,11 @@ import (
 	"sigs.k8s.io/cluster-inventory-api/pkg/credentialplugin"
 )
 
-// ProviderName is the name of the credential provider.
-const ProviderName = controller.ClusterProfileNamespace
-
 type Provider struct {
 	// KubeClient is the typed client for core Kubernetes resources (e.g. Secret).
 	KubeClient kubernetes.Interface
-	// ManagedServiceAccountName is the name of the managedserviceaccount
-	ManagedServiceAccountName string
+	// ManagedServiceAccount is the name of the managedserviceaccount
+	ManagedServiceAccount string
 }
 
 // NewDefault constructs a Provider with managedserviceaccount name and pre-initialized typed clientsets
@@ -52,17 +50,17 @@ func NewDefault(msaName string) (*Provider, error) {
 	}
 
 	return &Provider{
-		KubeClient:                kubeClient,
-		ManagedServiceAccountName: msaName,
+		KubeClient:            kubeClient,
+		ManagedServiceAccount: msaName,
 	}, nil
 }
 
-func (Provider) Name() string { return ProviderName }
+func (Provider) Name() string { return controller.ClusterProfileManagerName }
 
 func (p Provider) GetToken(ctx context.Context, info clientauthenticationv1.ExecCredential) (clientauthenticationv1.ExecCredentialStatus, error) {
 	// Require pre-initialized typed clients
 	if p.KubeClient == nil {
-		return clientauthenticationv1.ExecCredentialStatus{}, fmt.Errorf("provider clients are not initialized; construct with NewDefault or set clients")
+		return clientauthenticationv1.ExecCredentialStatus{}, fmt.Errorf("provider clients are not initialized")
 	}
 
 	// Extract clusterName from ExecCredential extensions config
@@ -85,20 +83,46 @@ func (p Provider) GetToken(ctx context.Context, info clientauthenticationv1.Exec
 
 	// Retrieve the synced token secret from clusterprofile namespace
 	// Secret naming format matches the controller's sync pattern: <clusterName>-<managedServiceAccountName>
-	// This corresponds to: ClusterProfile.name = clusterName, ManagedServiceAccount in namespace clusterName
-	tokenSecretName := fmt.Sprintf("%s-%s", cfg.ClusterName, p.ManagedServiceAccountName)
-	secret, err := p.KubeClient.CoreV1().Secrets(controller.ClusterProfileNamespace).Get(ctx, tokenSecretName, metav1.GetOptions{})
+	namespace := inferNamespace()
+	tokenSecretName := fmt.Sprintf("%s-%s", cfg.ClusterName, p.ManagedServiceAccount)
+	secret, err := p.KubeClient.CoreV1().Secrets(namespace).Get(ctx, tokenSecretName, metav1.GetOptions{})
 	if err != nil {
-		return clientauthenticationv1.ExecCredentialStatus{}, fmt.Errorf("failed to get synced credential secret %s/%s: %w", controller.ClusterProfileNamespace, tokenSecretName, err)
+		return clientauthenticationv1.ExecCredentialStatus{}, fmt.Errorf("failed to get synced credential secret %s/%s: %w", namespace, tokenSecretName, err)
 	}
 
 	// Extract the token from the secret data
 	tokenData, ok := secret.Data[corev1.ServiceAccountTokenKey]
 	if !ok || len(tokenData) == 0 {
-		return clientauthenticationv1.ExecCredentialStatus{}, fmt.Errorf("secret %s/%s missing or empty %q key", controller.ClusterProfileNamespace, tokenSecretName, corev1.ServiceAccountTokenKey)
+		return clientauthenticationv1.ExecCredentialStatus{}, fmt.Errorf("secret %s/%s missing or empty %q key", namespace, tokenSecretName, corev1.ServiceAccountTokenKey)
 	}
 
 	return clientauthenticationv1.ExecCredentialStatus{Token: string(tokenData)}, nil
+}
+
+func inferNamespace() string {
+	// First: Check NAMESPACE environment variable
+	if n := os.Getenv("NAMESPACE"); strings.TrimSpace(n) != "" {
+		return strings.TrimSpace(n)
+	}
+
+	// Second: Fallback to in-cluster namespace file
+	const namespaceFile = "/var/run/secrets/kubernetes.io/serviceaccount/namespace"
+	if data, err := os.ReadFile(namespaceFile); err == nil && len(data) > 0 {
+		return strings.TrimSpace(string(data))
+	}
+
+	// Third: Infer namespace from KUBECONFIG context using standard loading rules
+	rules := clientcmd.NewDefaultClientConfigLoadingRules()
+	if path := os.Getenv("KUBECONFIG"); strings.TrimSpace(path) != "" {
+		rules.ExplicitPath = path
+	}
+	cc := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(rules, &clientcmd.ConfigOverrides{})
+	if n, _, err := cc.Namespace(); err == nil && strings.TrimSpace(n) != "" {
+		return n
+	}
+
+	// Default namespace if all else fails
+	return "default"
 }
 
 func main() {
