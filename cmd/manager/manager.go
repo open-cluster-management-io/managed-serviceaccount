@@ -41,12 +41,14 @@ import (
 	"open-cluster-management.io/addon-framework/pkg/addonmanager"
 	"open-cluster-management.io/addon-framework/pkg/utils"
 	addonclient "open-cluster-management.io/api/client/addon/clientset/versioned"
+	cpv1alpha1 "sigs.k8s.io/cluster-inventory-api/apis/v1alpha1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	authv1beta1 "open-cluster-management.io/managed-serviceaccount/apis/authentication/v1beta1"
 	"open-cluster-management.io/managed-serviceaccount/pkg/addon/commoncontroller"
 	"open-cluster-management.io/managed-serviceaccount/pkg/addon/manager"
+	"open-cluster-management.io/managed-serviceaccount/pkg/addon/manager/controller"
 	"open-cluster-management.io/managed-serviceaccount/pkg/common"
 	"open-cluster-management.io/managed-serviceaccount/pkg/features"
 	"open-cluster-management.io/managed-serviceaccount/pkg/util"
@@ -61,6 +63,7 @@ var (
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 	utilruntime.Must(authv1beta1.AddToScheme(scheme))
+	utilruntime.Must(cpv1alpha1.AddToScheme(scheme))
 	//+kubebuilder:scaffold:scheme
 }
 
@@ -91,6 +94,9 @@ func (o *HubManagerOptions) AddFlags(flags *pflag.FlagSet) {
 	flags.BoolVar(&o.EnableLeaderElection, "leader-elect", false,
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
+	flags.StringVar(&o.DeployMode, "deploy-mode", "Deployment",
+		"Deployment mode for the manager. Valid values: 'Deployment' (default - runs addon manager and optional controllers), "+
+			"'AddOnTemplate' (runs only ClusterProfileCredSyncer controller without addon manager).")
 	flags.Var(
 		cliflag.NewMapStringBool(&o.FeatureGatesFlags),
 		"feature-gates",
@@ -109,6 +115,7 @@ type HubManagerOptions struct {
 	ProbeAddr            string
 	AddonAgentImageName  string
 	ImagePullSecretName  string
+	DeployMode           string
 	FeatureGatesFlags    map[string]bool
 }
 
@@ -141,24 +148,6 @@ func (o *HubManagerOptions) Run() error {
 		os.Exit(1)
 	}
 
-	addonManager, err := addonmanager.New(mgr.GetConfig())
-	if err != nil {
-		setupLog.Error(err, "unable to set up ready check")
-		os.Exit(1)
-	}
-
-	nativeClient, err := kubernetes.NewForConfig(mgr.GetConfig())
-	if err != nil {
-		setupLog.Error(err, "unable to instantiating kubernetes native client")
-		os.Exit(1)
-	}
-
-	addonClient, err := addonclient.NewForConfig(mgr.GetConfig())
-	if err != nil {
-		setupLog.Error(err, "unable to instantiating ocm addon client")
-		os.Exit(1)
-	}
-
 	_, err = mgr.GetRESTMapper().ResourceFor(schema.GroupVersionResource{
 		Group:    authv1beta1.GroupVersion.Group,
 		Version:  authv1beta1.GroupVersion.Version,
@@ -169,70 +158,105 @@ func (o *HubManagerOptions) Run() error {
 		os.Exit(1)
 	}
 
-	hubNamespace := os.Getenv("NAMESPACE")
-	if len(hubNamespace) == 0 {
-		inClusterNamespace, err := util.GetInClusterNamespace()
+	// Setup controllers based on deploy mode:
+	// - Deployment mode (deploy-mode=Deployment): Setup addon manager + optional controllers
+	// - AddOnTemplate mode (deploy-mode=AddOnTemplate): Setup only ClusterProfileCredSyncer controller if feature gate enabled
+	var addonManager addonmanager.AddonManager
+	if o.DeployMode != "AddOnTemplate" {
+		addonManager, err = addonmanager.New(mgr.GetConfig())
 		if err != nil {
-			setupLog.Error(err, "the manager should be either running in a container or specify NAMESPACE environment")
-		}
-		hubNamespace = inClusterNamespace
-	}
-
-	if len(o.ImagePullSecretName) == 0 {
-		o.ImagePullSecretName = os.Getenv("AGENT_IMAGE_PULL_SECRET")
-	}
-
-	imagePullSecret := &corev1.Secret{}
-	if len(o.ImagePullSecretName) != 0 {
-		imagePullSecret, err = nativeClient.CoreV1().Secrets(hubNamespace).Get(
-			context.TODO(),
-			o.ImagePullSecretName,
-			metav1.GetOptions{},
-		)
-		if err != nil {
-			setupLog.Error(err, "fail to get agent image pull secret")
+			setupLog.Error(err, "unable to set up addon manager")
 			os.Exit(1)
 		}
-		if imagePullSecret.Type != corev1.SecretTypeDockerConfigJson {
-			setupLog.Error(errors.Errorf("incorrect type for agent image pull secret"), "")
+
+		nativeClient, err := kubernetes.NewForConfig(mgr.GetConfig())
+		if err != nil {
+			setupLog.Error(err, "unable to instantiating kubernetes native client")
 			os.Exit(1)
+		}
+
+		addonClient, err := addonclient.NewForConfig(mgr.GetConfig())
+		if err != nil {
+			setupLog.Error(err, "unable to instantiating ocm addon client")
+			os.Exit(1)
+		}
+
+		hubNamespace := os.Getenv("NAMESPACE")
+		if len(hubNamespace) == 0 {
+			inClusterNamespace, err := util.GetInClusterNamespace()
+			if err != nil {
+				setupLog.Error(err, "the manager should be either running in a container or specify NAMESPACE environment")
+			}
+			hubNamespace = inClusterNamespace
+		}
+
+		if len(o.ImagePullSecretName) == 0 {
+			o.ImagePullSecretName = os.Getenv("AGENT_IMAGE_PULL_SECRET")
+		}
+
+		imagePullSecret := &corev1.Secret{}
+		if len(o.ImagePullSecretName) != 0 {
+			imagePullSecret, err = nativeClient.CoreV1().Secrets(hubNamespace).Get(
+				context.TODO(),
+				o.ImagePullSecretName,
+				metav1.GetOptions{},
+			)
+			if err != nil {
+				setupLog.Error(err, "fail to get agent image pull secret")
+				os.Exit(1)
+			}
+			if imagePullSecret.Type != corev1.SecretTypeDockerConfigJson {
+				setupLog.Error(errors.Errorf("incorrect type for agent image pull secret"), "")
+				os.Exit(1)
+			}
+		}
+
+		agentFactory := addonfactory.NewAgentAddonFactory(common.AddonName, manager.FS, "manifests/templates").
+			WithConfigGVRs(utils.AddOnDeploymentConfigGVR).
+			WithGetValuesFuncs(
+				manager.GetDefaultValues(o.AddonAgentImageName, imagePullSecret),
+				addonfactory.GetAgentImageValues(
+					utils.NewAddOnDeploymentConfigGetter(addonClient),
+					"Image",
+					o.AddonAgentImageName,
+				),
+				addonfactory.GetAddOnDeploymentConfigValues(
+					utils.NewAddOnDeploymentConfigGetter(addonClient),
+					addonfactory.ToAddOnDeploymentConfigValues,
+				),
+			).
+			WithAgentRegistrationOption(manager.NewRegistrationOption(nativeClient)).
+			WithAgentDeployTriggerClusterFilter(utils.ClusterImageRegistriesAnnotationChanged)
+
+		agentAddOn, err := agentFactory.BuildTemplateAgentAddon()
+		if err != nil {
+			setupLog.Error(err, "failed to build agent")
+			os.Exit(1)
+		}
+
+		if err := addonManager.AddAgent(agentAddOn); err != nil {
+			setupLog.Error(err, "unable to register addon agent")
+			os.Exit(1)
+		}
+
+		if features.FeatureGates.Enabled(features.EphemeralIdentity) {
+			if err := (commoncontroller.NewEphemeralIdentityReconciler(
+				mgr.GetCache(),
+				mgr.GetClient(),
+			)).SetupWithManager(mgr); err != nil {
+				setupLog.Error(err, "unable to register EphemeralIdentityReconciler")
+				os.Exit(1)
+			}
 		}
 	}
 
-	agentFactory := addonfactory.NewAgentAddonFactory(common.AddonName, manager.FS, "manifests/templates").
-		WithConfigGVRs(utils.AddOnDeploymentConfigGVR).
-		WithGetValuesFuncs(
-			manager.GetDefaultValues(o.AddonAgentImageName, imagePullSecret),
-			addonfactory.GetAgentImageValues(
-				utils.NewAddOnDeploymentConfigGetter(addonClient),
-				"Image",
-				o.AddonAgentImageName,
-			),
-			addonfactory.GetAddOnDeploymentConfigValues(
-				utils.NewAddOnDeploymentConfigGetter(addonClient),
-				addonfactory.ToAddOnDeploymentConfigValues,
-			),
-		).
-		WithAgentRegistrationOption(manager.NewRegistrationOption(nativeClient)).
-		WithAgentDeployTriggerClusterFilter(utils.ClusterImageRegistriesAnnotationChanged)
-
-	agentAddOn, err := agentFactory.BuildTemplateAgentAddon()
-	if err != nil {
-		setupLog.Error(err, "failed to build agent")
-		os.Exit(1)
-	}
-
-	if err := addonManager.AddAgent(agentAddOn); err != nil {
-		setupLog.Error(err, "unable to register addon agent")
-		os.Exit(1)
-	}
-
-	if features.FeatureGates.Enabled(features.EphemeralIdentity) {
-		if err := (commoncontroller.NewEphemeralIdentityReconciler(
+	// Setup ClusterProfileCredSyncer controller if feature gate is enabled
+	if features.FeatureGates.Enabled(features.ClusterProfileCredSyncer) {
+		if err := (controller.NewClusterProfileCredSyncer(
 			mgr.GetCache(),
 			mgr.GetClient(),
 		)).SetupWithManager(mgr); err != nil {
-			setupLog.Error(err, "unable to register EphemeralIdentityReconciler")
+			setupLog.Error(err, "unable to register ClusterProfileCredSyncer")
 			os.Exit(1)
 		}
 	}
@@ -242,9 +266,12 @@ func (o *HubManagerOptions) Run() error {
 	ctx, cancel := context.WithCancel(ctrl.SetupSignalHandler())
 	defer cancel()
 
-	if err := addonManager.Start(ctx); err != nil {
-		setupLog.Error(err, "unable to start addon agent")
-		os.Exit(1)
+	// Only start addon manager if not in AddOnTemplate mode
+	if o.DeployMode != "AddOnTemplate" {
+		if err := addonManager.Start(ctx); err != nil {
+			setupLog.Error(err, "unable to start addon agent")
+			os.Exit(1)
+		}
 	}
 
 	if err := mgr.Start(ctx); err != nil {

@@ -150,3 +150,50 @@ rules:
       - update
       - patch
 {{- end }}
+---
+{{- if (.Values.featureGates | default dict).clusterProfileCredSyncer }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: open-cluster-management:managed-serviceaccount:addon-manager-clusterprofile
+rules:
+  - apiGroups:
+      - authentication.open-cluster-management.io
+    resources:
+      - managedserviceaccounts
+      - managedserviceaccounts/status
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - multicluster.x-k8s.io
+    resources:
+      - clusterprofiles
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - ""
+    resources:
+      - secrets
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+      - update
+      - delete
+  - apiGroups:
+      - coordination.k8s.io
+    resources:
+      - leases
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+      - update
+      - patch
+{{- end }}
