@@ -94,9 +94,9 @@ func (o *HubManagerOptions) AddFlags(flags *pflag.FlagSet) {
 	flags.BoolVar(&o.EnableLeaderElection, "leader-elect", false,
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
-	flags.BoolVar(&o.AddonTemplateMode, "addon-template-mode", false,
-		"Enable AddOnTemplate mode. In this mode, only ClusterProfileCredSyncer controller runs, "+
-			"and the addon manager is not started.")
+	flags.StringVar(&o.DeployMode, "deploy-mode", "Deployment",
+		"Deployment mode for the manager. Valid values: 'Deployment' (default - runs addon manager and optional controllers), "+
+			"'AddOnTemplate' (runs only ClusterProfileCredSyncer controller without addon manager).")
 	flags.Var(
 		cliflag.NewMapStringBool(&o.FeatureGatesFlags),
 		"feature-gates",
@@ -115,7 +115,7 @@ type HubManagerOptions struct {
 	ProbeAddr            string
 	AddonAgentImageName  string
 	ImagePullSecretName  string
-	AddonTemplateMode    bool
+	DeployMode           string
 	FeatureGatesFlags    map[string]bool
 }
 
@@ -158,11 +158,11 @@ func (o *HubManagerOptions) Run() error {
 		os.Exit(1)
 	}
 
-	// Setup controllers based on deployment mode:
-	// - Normal mode (!AddonTemplateMode): Setup addon manager + optional controllers
-	// - AddOnTemplate mode: Setup only ClusterProfileCredSyncer controller if feature gate enabled
+	// Setup controllers based on deploy mode:
+	// - Deployment mode (deploy-mode=Deployment): Setup addon manager + optional controllers
+	// - AddOnTemplate mode (deploy-mode=AddOnTemplate): Setup only ClusterProfileCredSyncer controller if feature gate enabled
 	var addonManager addonmanager.AddonManager
-	if !o.AddonTemplateMode {
+	if o.DeployMode != "AddOnTemplate" {
 		addonManager, err = addonmanager.New(mgr.GetConfig())
 		if err != nil {
 			setupLog.Error(err, "unable to set up addon manager")
@@ -267,7 +267,7 @@ func (o *HubManagerOptions) Run() error {
 	defer cancel()
 
 	// Only start addon manager if not in AddOnTemplate mode
-	if !o.AddonTemplateMode {
+	if o.DeployMode != "AddOnTemplate" {
 		if err := addonManager.Start(ctx); err != nil {
 			setupLog.Error(err, "unable to start addon agent")
 			os.Exit(1)
