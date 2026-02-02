@@ -8,6 +8,7 @@ replicas: 1
 
 featureGates:
   ephemeralIdentity: false
+  clusterProfileCredSyncer: false
 
 agentImagePullSecret: ""
 
