@@ -68,23 +68,30 @@ func (p Provider) GetToken(ctx context.Context, info clientauthenticationv1.Exec
 		ClusterName string `json:"clusterName"`
 	}
 
-	// Validate presence of cluster config
-	if info.Spec.Cluster == nil || len(info.Spec.Cluster.Config.Raw) == 0 {
-		return clientauthenticationv1.ExecCredentialStatus{}, fmt.Errorf("missing ExecCredential.Spec.Cluster.Config")
+	var clusterName string
+
+	// Try to get clusterName from Config first
+	if info.Spec.Cluster != nil && len(info.Spec.Cluster.Config.Raw) > 0 {
+		var cfg execClusterConfig
+		if err := json.Unmarshal(info.Spec.Cluster.Config.Raw, &cfg); err == nil && cfg.ClusterName != "" {
+			clusterName = cfg.ClusterName
+		}
 	}
 
-	var cfg execClusterConfig
-	if err := json.Unmarshal(info.Spec.Cluster.Config.Raw, &cfg); err != nil {
-		return clientauthenticationv1.ExecCredentialStatus{}, fmt.Errorf("invalid ExecCredential.Spec.Cluster.Config: %w", err)
+	// Fallback: extract clusterName from the server URL path
+	// The cluster-proxy server URL format is: https://cluster-proxy-addon-user.../clusterName
+	if clusterName == "" && info.Spec.Cluster != nil && info.Spec.Cluster.Server != "" {
+		clusterName = extractClusterNameFromURL(info.Spec.Cluster.Server)
 	}
-	if cfg.ClusterName == "" {
-		return clientauthenticationv1.ExecCredentialStatus{}, fmt.Errorf("missing clusterName in ExecCredential.Spec.Cluster.Config")
+
+	if clusterName == "" {
+		return clientauthenticationv1.ExecCredentialStatus{}, fmt.Errorf("missing clusterName: could not extract from ExecCredential.Spec.Cluster.Config or server URL")
 	}
 
 	// Retrieve the synced token secret from clusterprofile namespace
 	// Secret naming format matches the controller's sync pattern: <clusterName>-<managedServiceAccountName>
 	namespace := inferNamespace()
-	tokenSecretName := fmt.Sprintf("%s-%s", cfg.ClusterName, p.ManagedServiceAccount)
+	tokenSecretName := fmt.Sprintf("%s-%s", clusterName, p.ManagedServiceAccount)
 	secret, err := p.KubeClient.CoreV1().Secrets(namespace).Get(ctx, tokenSecretName, metav1.GetOptions{})
 	if err != nil {
 		return clientauthenticationv1.ExecCredentialStatus{}, fmt.Errorf("failed to get synced credential secret %s/%s: %w", namespace, tokenSecretName, err)
@@ -97,6 +104,22 @@ func (p Provider) GetToken(ctx context.Context, info clientauthenticationv1.Exec
 	}
 
 	return clientauthenticationv1.ExecCredentialStatus{Token: string(tokenData)}, nil
+}
+
+// extractClusterNameFromURL extracts the cluster name from the cluster-proxy server URL.
+// The URL format is: https://cluster-proxy-addon-user.open-cluster-management-addon:9092/clusterName
+func extractClusterNameFromURL(serverURL string) string {
+	// Find the last path segment
+	idx := strings.LastIndex(serverURL, "/")
+	if idx == -1 || idx == len(serverURL)-1 {
+		return ""
+	}
+	clusterName := serverURL[idx+1:]
+	// Remove any query parameters
+	if qIdx := strings.Index(clusterName, "?"); qIdx != -1 {
+		clusterName = clusterName[:qIdx]
+	}
+	return clusterName
 }
 
 func inferNamespace() string {
