@@ -22,9 +22,9 @@ const (
 	// owner: @morvencao
 	// alpha: v0.1
 	//
-	// ClusterProfileCredSyncer enables the controller that watches ClusterProfile and
+	// ClusterProfile enables the controller that watches ClusterProfile and
 	// ManagedServiceAccount resources, syncing token secrets to ClusterProfile namespaces
-	ClusterProfileCredSyncer featuregate.Feature = "ClusterProfileCredSyncer"
+	ClusterProfile featuregate.Feature = "ClusterProfile"
 )
 
 var (
@@ -41,6 +41,6 @@ func init() {
 // feature keys.  To add a new feature, define a key for it above and
 // add it here.
 var DefaultManagedServiceAccountFeatureGates = map[featuregate.Feature]featuregate.FeatureSpec{
-	EphemeralIdentity:        {Default: false, PreRelease: featuregate.Alpha},
-	ClusterProfileCredSyncer: {Default: false, PreRelease: featuregate.Alpha},
+	EphemeralIdentity: {Default: false, PreRelease: featuregate.Alpha},
+	ClusterProfile:    {Default: false, PreRelease: featuregate.Alpha},
 }

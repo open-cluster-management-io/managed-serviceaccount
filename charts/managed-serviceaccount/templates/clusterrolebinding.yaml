@@ -13,7 +13,7 @@ subjects:
     namespace: {{ .Release.Namespace }}
 {{- end }}
 ---
-{{- if (.Values.featureGates | default dict).clusterProfileCredSyncer }}
+{{- if (.Values.featureGates | default dict).clusterProfile }}
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
