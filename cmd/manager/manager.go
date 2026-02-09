@@ -251,7 +251,7 @@ func (o *HubManagerOptions) Run() error {
 	}
 
 	// Setup ClusterProfileCredSyncer controller if feature gate is enabled
-	if features.FeatureGates.Enabled(features.ClusterProfileCredSyncer) {
+	if features.FeatureGates.Enabled(features.ClusterProfile) {
 		if err := (controller.NewClusterProfileCredSyncer(
 			mgr.GetCache(),
 			mgr.GetClient(),

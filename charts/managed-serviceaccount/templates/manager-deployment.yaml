@@ -1,4 +1,4 @@
-{{- if or (ne .Values.hubDeployMode "AddOnTemplate") .Values.featureGates.clusterProfileCredSyncer }}
+{{- if or (ne .Values.hubDeployMode "AddOnTemplate") .Values.featureGates.clusterProfile }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -29,7 +29,7 @@ spec:
             - --deploy-mode={{ .Values.hubDeployMode }}
             - --agent-image-name={{ .Values.image }}:{{ .Values.tag | default (print "v" .Chart.Version) }}
             {{- if .Values.featureGates }}
-            - --feature-gates=EphemeralIdentity={{ .Values.featureGates.ephemeralIdentity | default false}},ClusterProfileCredSyncer={{ .Values.featureGates.clusterProfileCredSyncer | default false}}
+            - --feature-gates=EphemeralIdentity={{ .Values.featureGates.ephemeralIdentity | default false}},ClusterProfile={{ .Values.featureGates.clusterProfile | default false}}
             {{- end}}
             {{- if .Values.agentImagePullSecret }}
             - --agent-image-pull-secret={{ .Values.agentImagePullSecret }}
