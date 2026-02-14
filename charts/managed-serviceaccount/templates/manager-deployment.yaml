@@ -15,6 +15,11 @@ spec:
         open-cluster-management.io/addon: managed-serviceaccount
     spec:
       serviceAccount: managed-serviceaccount
+      securityContext:
+        {{- if semverCompare ">=4.11.0" .Values.hubconfig.ocpVersion }} 
+        seccompProfile: 
+          type: RuntimeDefault
+        {{- end }}
       containers:
         - name: manager
           image: {{ .Values.image }}:{{ .Values.tag | default (print "v" .Chart.Version) }}
