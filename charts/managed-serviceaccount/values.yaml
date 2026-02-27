@@ -16,4 +16,4 @@ agentImagePullSecret: ""
 hubDeployMode: Deployment
 
 # Name of the managed service-account addon template, only used when hubDeployMode is AddOnTemplate
-# addOnTemplateName: managed-serviceaccount
+addOnTemplateName: managed-serviceaccount
