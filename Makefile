@@ -12,11 +12,8 @@ else
 GOBIN=$(shell go env GOBIN)
 endif
 
-GOOS   ?= $(shell go env GOOS)
-GOARCH ?= $(shell go env GOARCH)
-
 export DOCKER_BUILDER ?= docker
-export CGO_ENABLED = 0
+export CGO_ENABLED = 1
 export GOFLAGS ?=
 
 # Setting SHELL to bash allows bash commands to be executed by recipes.
@@ -67,11 +64,8 @@ test: manifests generate fmt vet envtest ## Run tests.
 
 build: generate fmt vet build-bin
 
-# build a fully self-contained clusterprofile credentials plugin binary
-# so it can run in arbitrary environments (e.g. scratch/distroless).
 build-bin:
-	GOOS=$(GOOS) GOARCH=$(GOARCH) CGO_ENABLED=$(CGO_ENABLED) go build -trimpath -ldflags="-s -w" -a -o bin/msa cmd/main.go
-	GOOS=$(GOOS) GOARCH=$(GOARCH) CGO_ENABLED=$(CGO_ENABLED) go build -trimpath -ldflags="-s -w" -a -o bin/cp-creds cmd/clusterprofile-credentials-plugin/main.go
+	go build -a -o bin/msa cmd/main.go
 
 build-e2e:
 	go test -c -o bin/e2e ./e2e/
@@ -137,6 +131,12 @@ images:
 
 images-amd64:
 	$(DOCKER_BUILDER) build --platform linux/amd64 -t ${IMG_REGISTRY}/managed-serviceaccount:${IMAGE_TAG} -f Dockerfile .
+
+images-cp-creds:
+	$(DOCKER_BUILDER) build ${IMAGE_BUILD_EXTRA_FLAGS} -t ${IMG_REGISTRY}/cp-creds:${IMAGE_TAG} -f Dockerfile.cp-creds .
+
+images-cp-creds-amd64:
+	$(DOCKER_BUILDER) build --platform linux/amd64 ${IMAGE_BUILD_EXTRA_FLAGS} -t ${IMG_REGISTRY}/cp-creds:${IMAGE_TAG} -f Dockerfile.cp-creds .
 
 test-integration:
 	@echo "TODO: Run integration test"
