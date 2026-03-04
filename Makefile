@@ -17,7 +17,6 @@ export CGO_ENABLED = 1
 export GOFLAGS ?=
 
 # Setting SHELL to bash allows bash commands to be executed by recipes.
-# This is a requirement for 'setup-envtest.sh' in the test target.
 # Options are set to exit when a recipe line exits non-zero or a piped command fails.
 SHELL = /usr/bin/env bash -o pipefail
 .SHELLFLAGS = -ec
@@ -59,10 +58,15 @@ vet: ## Run go vet against code.
 lint: ## Run golangci-lint against code.
 	@bash -o pipefail -c 'curl -fsSL https://raw.githubusercontent.com/open-cluster-management-io/sdk-go/main/ci/lint/run-lint.sh | bash'
 
-ENVTEST = $(shell pwd)/bin/setup-envtest
-ENVTEST_K8S_VERSION = 1.35.0
-test: manifests generate fmt vet envtest ## Run tests.
-	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(shell pwd)/testbin -p path)" go test ./pkg/... -coverprofile cover.out
+ENSURE_ENVTEST_SCRIPT := https://raw.githubusercontent.com/open-cluster-management-io/sdk-go/main/ci/envtest/ensure-envtest.sh
+
+.PHONY: envtest-setup
+envtest-setup:
+	$(eval export KUBEBUILDER_ASSETS=$(shell curl -fsSL $(ENSURE_ENVTEST_SCRIPT) | bash))
+	@echo "KUBEBUILDER_ASSETS=$(KUBEBUILDER_ASSETS)"
+
+test: manifests generate fmt vet envtest-setup ## Run tests.
+	go test ./pkg/... -coverprofile cover.out
 
 ##@ Build
 
@@ -112,9 +116,6 @@ lister-gen: ## Download lister-gen locally if necessary.
 INFORMER_GEN = $(shell pwd)/bin/informer-gen
 informer-gen: ## Download informer-gen locally if necessary.
 	$(call go-get-tool,$(INFORMER_GEN),k8s.io/code-generator/cmd/informer-gen@v0.29.2)
-
-envtest: ## Download envtest-setup locally if necessary.
-	$(call go-get-tool,$(ENVTEST),sigs.k8s.io/controller-runtime/tools/setup-envtest@latest)
 
 # go-get-tool will 'go get' any package $2 and install it to $1.
 PROJECT_DIR := $(shell dirname $(abspath $(lastword $(MAKEFILE_LIST))))
