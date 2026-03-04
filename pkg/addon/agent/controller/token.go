@@ -71,7 +71,7 @@ func (r *TokenReconciler) Reconcile(ctx context.Context, request reconcile.Reque
 	logger.Info("Start reconciling")
 	msa := &authv1beta1.ManagedServiceAccount{}
 
-	if err := r.Cache.Get(ctx, request.NamespacedName, msa); err != nil {
+	if err := r.Get(ctx, request.NamespacedName, msa); err != nil {
 		if !apierrors.IsNotFound(err) {
 			// fail to get managed-serviceaccount, requeue
 			return reconcile.Result{}, errors.Wrapf(err, "fail to get managed serviceaccount")
@@ -127,7 +127,7 @@ func (r *TokenReconciler) Reconcile(ctx context.Context, request reconcile.Reque
 	}
 
 	now := metav1.Now()
-	var requeueAfter time.Duration = 0
+	var requeueAfter time.Duration
 	if expiring == nil {
 		// token is not expiried, no need to refresh, just calculate the requeue time
 		if msa.Status.TokenSecretRef == nil || msa.Status.ExpirationTimestamp == nil {
@@ -185,9 +185,9 @@ func setManagedServiceAccountSuccessStatus(msaCopy *authv1beta1.ManagedServiceAc
 func checkTokenRefreshAfter(now metav1.Time, expiring metav1.Time, lastRefreshTimestamp metav1.Time) time.Duration {
 	exceed, threshold := exceedThreshold(now, expiring, lastRefreshTimestamp)
 	if exceed {
-		return time.Duration(5 * time.Second)
+		return 5 * time.Second
 	}
-	return threshold.Sub(now.Time) + time.Duration(5*time.Second)
+	return threshold.Sub(now.Time) + 5*time.Second
 }
 
 // sync is the main logic of token rotation, it returns the expiration time of the token if the token is created/updated
@@ -361,7 +361,7 @@ func exceedThreshold(now metav1.Time, expiring metav1.Time, lastRefreshTimestamp
 	// to 1 day, so here we use the real expiration time and last refresh time, instead of the requested expiration time
 	// in the managedserviceaccount.spec.rotation.validity, to calculate the refresh threshold
 	threshold := lastRefreshTimestamp.Add(expiring.Sub(lastRefreshTimestamp.Time) / 5 * 4)
-	return now.Time.After(threshold), threshold
+	return now.After(threshold), threshold
 }
 
 // CheckUserInToken checks the namespace and name from the `sub` claim in JWT token payload

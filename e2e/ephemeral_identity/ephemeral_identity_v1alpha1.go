@@ -1,15 +1,16 @@
-package ephemeral_identity
+package ephemeral_identity //nolint:revive,staticcheck // package name matches directory structure
 
 import (
 	"context"
 	"time"
 
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
+	. "github.com/onsi/ginkgo/v2" //nolint:revive,staticcheck // idiomatic ginkgo usage
+	. "github.com/onsi/gomega"    //nolint:revive,staticcheck // idiomatic gomega usage
 
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+
 	authv1alpha1 "open-cluster-management.io/managed-serviceaccount/apis/authentication/v1alpha1"
 	"open-cluster-management.io/managed-serviceaccount/e2e/framework"
 )
@@ -60,14 +61,14 @@ var _ = Describe("Ephemeral ManagedServiceAccount Test", Label("ephemeral"), fun
 		deletedAt := latest.DeletionTimestamp
 		Expect(deletedAt).ToNot(BeNil())
 
-		lifetime := deletedAt.Time.Sub(createdAt.Time)
+		lifetime := deletedAt.Sub(createdAt.Time)
 
-		//deletion occured after TTL
+		// deletion occurred after TTL
 		Expect(lifetime >= ttlDuration).To(BeTrue())
-		//but not too much after TTL
+		// but not too much after TTL
 		Expect(lifetime <= ttlDuration+time.Second).To(BeTrue())
 
-		//remove finalizer
+		// remove finalizer
 		latest.Finalizers = []string{}
 		err = f.HubRuntimeClient().Update(context.TODO(), latest)
 		Expect(err).ToNot(HaveOccurred())
@@ -77,10 +78,7 @@ var _ = Describe("Ephemeral ManagedServiceAccount Test", Label("ephemeral"), fun
 				Namespace: f.TestClusterName(),
 				Name:      targetName,
 			}, latest)
-			if errors.IsNotFound(err) {
-				return true
-			}
-			return false
+			return errors.IsNotFound(err)
 		}, time.Second*30, time.Second).Should(BeTrue())
 	})
 })

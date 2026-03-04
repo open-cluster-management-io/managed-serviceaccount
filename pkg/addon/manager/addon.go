@@ -10,12 +10,12 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
+
 	"open-cluster-management.io/addon-framework/pkg/addonfactory"
 	"open-cluster-management.io/addon-framework/pkg/agent"
 	addonv1alpha1 "open-cluster-management.io/api/addon/v1alpha1"
 	clusterv1 "open-cluster-management.io/api/cluster/v1"
-
 	"open-cluster-management.io/managed-serviceaccount/pkg/common"
 )
 
@@ -63,7 +63,7 @@ func setupPermission(nativeClient kubernetes.Interface) agent.PermissionConfigFu
 						Kind:               "ManagedClusterAddOn",
 						UID:                addon.UID,
 						Name:               addon.Name,
-						BlockOwnerDeletion: pointer.Bool(true),
+						BlockOwnerDeletion: ptr.To(true),
 					},
 				},
 			},
@@ -95,7 +95,7 @@ func setupPermission(nativeClient kubernetes.Interface) agent.PermissionConfigFu
 						Kind:               "ManagedClusterAddOn",
 						UID:                addon.UID,
 						Name:               addon.Name,
-						BlockOwnerDeletion: pointer.Bool(true),
+						BlockOwnerDeletion: ptr.To(true),
 					},
 				},
 			},
