@@ -1,6 +1,9 @@
 package framework
 
 import (
+	. "github.com/onsi/ginkgo/v2" //nolint:revive,staticcheck // idiomatic ginkgo usage
+	. "github.com/onsi/gomega"    //nolint:revive,staticcheck // idiomatic gomega usage
+
 	"k8s.io/apimachinery/pkg/util/rand"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -8,9 +11,6 @@ import (
 	"k8s.io/klog/v2/klogr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
 )
 
 // unique identifier of the e2e run
@@ -68,7 +68,7 @@ func (f *framework) TestClusterName() string {
 }
 
 func (f *framework) BeforeEach() {
-	logger := klogr.New()
+	logger := klogr.New() //nolint:staticcheck // textlogger not vendored, klogr works fine for e2e tests
 	ctrl.SetLogger(logger)
 }
 

@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"time"
 
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
+	. "github.com/onsi/ginkgo/v2" //nolint:revive,staticcheck // idiomatic ginkgo usage
+	. "github.com/onsi/gomega"    //nolint:revive,staticcheck // idiomatic gomega usage
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -17,10 +17,10 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/types"
-	addonv1alpha1 "open-cluster-management.io/api/addon/v1alpha1"
-	clusterv1 "open-cluster-management.io/api/cluster/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	addonv1alpha1 "open-cluster-management.io/api/addon/v1alpha1"
+	clusterv1 "open-cluster-management.io/api/cluster/v1"
 	"open-cluster-management.io/managed-serviceaccount/e2e/framework"
 	"open-cluster-management.io/managed-serviceaccount/pkg/common"
 )
@@ -132,11 +132,13 @@ var _ = Describe("Addon Installation Test", Label("install"),
 			By("Ensure the managed serviceaccount addon agent is configured")
 			Eventually(func() error {
 				deployments := &appsv1.DeploymentList{}
-				c.List(context.TODO(), deployments, &client.ListOptions{
+				if err := c.List(context.TODO(), deployments, &client.ListOptions{
 					FieldSelector: fields.SelectorFromSet(map[string]string{
 						"metadata.name": "managed-serviceaccount-addon-agent",
 					}),
-				})
+				}); err != nil {
+					return err
+				}
 
 				if len(deployments.Items) != 1 {
 					return fmt.Errorf("unexpected number of deployments %v", deployments.Items)
@@ -195,7 +197,7 @@ var _ = Describe("Addon Installation Test", Label("install"),
 					},
 				},
 			}
-			registriesJson, err := json.Marshal(overrideRegistries)
+			registriesJSON, err := json.Marshal(overrideRegistries)
 			Expect(err).ToNot(HaveOccurred())
 			Eventually(func() error {
 				cluster := &clusterv1.ManagedCluster{}
@@ -212,7 +214,7 @@ var _ = Describe("Addon Installation Test", Label("install"),
 				if annotations == nil {
 					annotations = make(map[string]string)
 				}
-				annotations[clusterv1.ClusterImageRegistriesAnnotationKey] = string(registriesJson)
+				annotations[clusterv1.ClusterImageRegistriesAnnotationKey] = string(registriesJSON)
 
 				newCluster.Annotations = annotations
 				return f.HubRuntimeClient().Update(context.Background(), newCluster)
@@ -220,7 +222,6 @@ var _ = Describe("Addon Installation Test", Label("install"),
 
 			By("Make sure addon is configured")
 			Eventually(func() error {
-				agentDeploy := &appsv1.Deployment{}
 				agentDeploy, err := f.HubNativeClient().AppsV1().Deployments(addonInstallNamespace).Get(
 					context.Background(), "managed-serviceaccount-addon-agent", metav1.GetOptions{})
 				if err != nil {
@@ -258,7 +259,6 @@ var _ = Describe("Addon Installation Test", Label("install"),
 
 			By("Make sure addon config is restored")
 			Eventually(func() error {
-				agentDeploy := &appsv1.Deployment{}
 				agentDeploy, err := f.HubNativeClient().AppsV1().Deployments(addonInstallNamespace).Get(
 					context.Background(), "managed-serviceaccount-addon-agent", metav1.GetOptions{})
 				if err != nil {

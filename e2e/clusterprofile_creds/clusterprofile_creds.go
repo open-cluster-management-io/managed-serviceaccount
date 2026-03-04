@@ -9,8 +9,8 @@ import (
 	"path/filepath"
 	"time"
 
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
+	. "github.com/onsi/ginkgo/v2" //nolint:revive,staticcheck // idiomatic ginkgo usage
+	. "github.com/onsi/gomega"    //nolint:revive,staticcheck // idiomatic gomega usage
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -19,11 +19,12 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	clientauthenticationv1 "k8s.io/client-go/pkg/apis/clientauthentication/v1"
+	cpv1alpha1 "sigs.k8s.io/cluster-inventory-api/apis/v1alpha1"
+
 	clusterv1 "open-cluster-management.io/api/cluster/v1"
 	authv1beta1 "open-cluster-management.io/managed-serviceaccount/apis/authentication/v1beta1"
 	"open-cluster-management.io/managed-serviceaccount/e2e/framework"
 	"open-cluster-management.io/managed-serviceaccount/pkg/addon/manager/controller"
-	cpv1alpha1 "sigs.k8s.io/cluster-inventory-api/apis/v1alpha1"
 )
 
 const (

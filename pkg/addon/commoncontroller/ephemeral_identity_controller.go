@@ -49,7 +49,7 @@ func (r *EphemeralIdentityReconciler) Reconcile(ctx context.Context, request rec
 	logger := log.FromContext(ctx)
 	logger.Info("Start reconciling")
 	managed := &authv1beta1.ManagedServiceAccount{}
-	if err := r.Cache.Get(ctx, request.NamespacedName, managed); err != nil {
+	if err := r.Get(ctx, request.NamespacedName, managed); err != nil {
 		if !apierrors.IsNotFound(err) {
 			return reconcile.Result{}, errors.Wrapf(err, "fail to get managed serviceaccount")
 		}

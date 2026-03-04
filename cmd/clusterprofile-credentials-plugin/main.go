@@ -14,8 +14,9 @@ import (
 	clientauthenticationv1 "k8s.io/client-go/pkg/apis/clientauthentication/v1"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
-	"open-cluster-management.io/managed-serviceaccount/pkg/addon/manager/controller"
 	"sigs.k8s.io/cluster-inventory-api/pkg/credentialplugin"
+
+	"open-cluster-management.io/managed-serviceaccount/pkg/addon/manager/controller"
 )
 
 type Provider struct {

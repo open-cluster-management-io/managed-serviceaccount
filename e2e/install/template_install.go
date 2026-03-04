@@ -5,14 +5,14 @@ import (
 	"fmt"
 	"time"
 
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
+	. "github.com/onsi/ginkgo/v2" //nolint:revive,staticcheck // idiomatic ginkgo usage
+	. "github.com/onsi/gomega"    //nolint:revive,staticcheck // idiomatic gomega usage
 
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	addonv1alpha1 "open-cluster-management.io/api/addon/v1alpha1"
 
+	addonv1alpha1 "open-cluster-management.io/api/addon/v1alpha1"
 	"open-cluster-management.io/managed-serviceaccount/e2e/framework"
 	"open-cluster-management.io/managed-serviceaccount/pkg/common"
 )
@@ -34,7 +34,7 @@ var _ = Describe("Template Addon Installation Test", Label("install"), Label("te
 				Expect(err).NotTo(HaveOccurred())
 
 				addonCopy := addon.DeepCopy()
-				addonCopy.Spec.InstallNamespace = "test-ns"
+				addonCopy.Spec.InstallNamespace = "test-ns" //nolint:staticcheck // testing deprecated field behavior
 				return f.HubRuntimeClient().Update(context.Background(), addonCopy)
 			}).WithTimeout(time.Minute).ShouldNot(HaveOccurred())
 

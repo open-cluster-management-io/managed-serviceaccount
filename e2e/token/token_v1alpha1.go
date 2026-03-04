@@ -4,15 +4,15 @@ import (
 	"context"
 	"time"
 
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
+	. "github.com/onsi/ginkgo/v2" //nolint:revive,staticcheck // idiomatic ginkgo usage
+	. "github.com/onsi/gomega"    //nolint:revive,staticcheck // idiomatic gomega usage
 
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+
 	addonv1alpha1 "open-cluster-management.io/api/addon/v1alpha1"
 	"open-cluster-management.io/managed-serviceaccount/apis/authentication/v1alpha1"
 	"open-cluster-management.io/managed-serviceaccount/e2e/framework"
@@ -88,7 +88,7 @@ var _ = Describe("Token Test",
 				return len(secret.Data[corev1.ServiceAccountTokenKey]) > 0, nil
 			}).WithTimeout(30 * time.Second).Should(BeTrue())
 
-			By("Validate the validitiy of the generated token", func() {
+			By("Validate the validity of the generated token", func() {
 				validateToken(f, targetName)
 			})
 		})
@@ -160,43 +160,34 @@ var _ = Describe("Token Test",
 				Expect(err).NotTo(HaveOccurred())
 			})
 
-			//managed serviceaccount should be deleted
+			// managed serviceaccount should be deleted
 			Eventually(func() bool {
 				msa := &v1alpha1.ManagedServiceAccount{}
 				err = f.HubRuntimeClient().Get(context.TODO(), types.NamespacedName{
 					Namespace: f.TestClusterName(),
 					Name:      targetName,
 				}, msa)
-				if errors.IsNotFound(err) {
-					return true
-				}
-				return false
+				return apierrors.IsNotFound(err)
 			}, time.Minute, time.Second).Should(BeTrue())
 
-			//token secret should be deleted
+			// token secret should be deleted
 			Eventually(func() bool {
 				secret := &corev1.Secret{}
 				err = f.HubRuntimeClient().Get(context.TODO(), types.NamespacedName{
 					Namespace: f.TestClusterName(),
 					Name:      msa.Status.TokenSecretRef.Name,
 				}, secret)
-				if errors.IsNotFound(err) {
-					return true
-				}
-				return false
+				return apierrors.IsNotFound(err)
 			}, time.Minute, time.Second).Should(BeTrue())
 
-			//serviceaccount should be deleted
+			// serviceaccount should be deleted
 			Eventually(func() bool {
 				serviceAccount := &corev1.ServiceAccount{}
 				err = f.HubRuntimeClient().Get(context.TODO(), types.NamespacedName{
 					Namespace: addon.Status.Namespace,
 					Name:      targetName,
 				}, serviceAccount)
-				if errors.IsNotFound(err) {
-					return true
-				}
-				return false
+				return apierrors.IsNotFound(err)
 			}, time.Minute, time.Second).Should(BeTrue())
 		})
 	},

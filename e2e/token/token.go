@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
+	. "github.com/onsi/ginkgo/v2" //nolint:revive,staticcheck // idiomatic ginkgo usage
+	. "github.com/onsi/gomega"    //nolint:revive,staticcheck // idiomatic gomega usage
 
 	authv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -14,6 +14,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+
 	addonv1alpha1 "open-cluster-management.io/api/addon/v1alpha1"
 	authv1beta1 "open-cluster-management.io/managed-serviceaccount/apis/authentication/v1beta1"
 	"open-cluster-management.io/managed-serviceaccount/e2e/framework"
@@ -88,7 +89,7 @@ var _ = Describe("Token Test for Managed Service Account v1beta1",
 				return len(secret.Data[corev1.ServiceAccountTokenKey]) > 0, nil
 			}).WithTimeout(30 * time.Second).Should(BeTrue())
 
-			By("Validate the validitiy of the generated token", func() {
+			By("Validate the validity of the generated token", func() {
 				validateToken(f, targetName)
 			})
 		})
