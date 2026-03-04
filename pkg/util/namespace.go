@@ -2,7 +2,6 @@ package util
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
 )
 
@@ -18,7 +17,7 @@ func GetInClusterNamespace() (string, error) {
 	}
 
 	// Load the namespace file and return its content
-	namespace, err := ioutil.ReadFile(inClusterNamespacePath)
+	namespace, err := os.ReadFile(inClusterNamespacePath)
 	if err != nil {
 		return "", fmt.Errorf("error reading namespace file: %w", err)
 	}

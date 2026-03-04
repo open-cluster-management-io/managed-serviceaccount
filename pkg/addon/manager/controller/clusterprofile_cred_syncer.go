@@ -10,7 +10,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
-	clusterv1 "open-cluster-management.io/api/cluster/v1"
 	cpv1alpha1 "sigs.k8s.io/cluster-inventory-api/apis/v1alpha1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
@@ -20,6 +19,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
+	clusterv1 "open-cluster-management.io/api/cluster/v1"
 	authv1beta1 "open-cluster-management.io/managed-serviceaccount/apis/authentication/v1beta1"
 	"open-cluster-management.io/managed-serviceaccount/pkg/common"
 )
@@ -106,7 +106,7 @@ func (r *ClusterProfileCredSyncer) mapManagedServiceAccountToClusterProfile(ctx 
 
 	// Find all ClusterProfiles with name matching the managedserviceaccount namespace
 	cpList := &cpv1alpha1.ClusterProfileList{}
-	if err := r.Cache.List(ctx, cpList); err != nil {
+	if err := r.List(ctx, cpList); err != nil {
 		logger.Error(err, "failed to list clusterprofiles")
 		return []reconcile.Request{}
 	}
@@ -138,7 +138,7 @@ func (r *ClusterProfileCredSyncer) mapTokenSecretToClusterProfile(ctx context.Co
 
 	// Find all ClusterProfiles with name matching the secret namespace
 	cpList := &cpv1alpha1.ClusterProfileList{}
-	if err := r.Cache.List(ctx, cpList); err != nil {
+	if err := r.List(ctx, cpList); err != nil {
 		logger.Error(err, "failed to list clusterprofiles")
 		return []reconcile.Request{}
 	}
@@ -163,7 +163,7 @@ func (r *ClusterProfileCredSyncer) Reconcile(ctx context.Context, req reconcile.
 
 	// get the clusterprofile
 	cp := &cpv1alpha1.ClusterProfile{}
-	if err := r.Cache.Get(ctx, req.NamespacedName, cp); err != nil {
+	if err := r.Get(ctx, req.NamespacedName, cp); err != nil {
 		if apierrors.IsNotFound(err) {
 			// clusterprofile is deleted, owner reference will handle cleanup automatically
 			logger.Info("ClusterProfile not found, secrets will be cleaned up by garbage collection")
@@ -175,7 +175,7 @@ func (r *ClusterProfileCredSyncer) Reconcile(ctx context.Context, req reconcile.
 	// List managedserviceaccount only in the namespace matching the clusterprofile name
 	// and with the required sync label
 	msaList := &authv1beta1.ManagedServiceAccountList{}
-	if err := r.Cache.List(ctx, msaList,
+	if err := r.List(ctx, msaList,
 		client.InNamespace(cp.Name),
 		client.MatchingLabels{LabelKeyClusterProfileSync: "true"},
 	); err != nil {
@@ -213,7 +213,7 @@ func (r *ClusterProfileCredSyncer) syncCreds(ctx context.Context, msa *authv1bet
 		Namespace: msa.Namespace,
 		Name:      msa.Status.TokenSecretRef.Name,
 	}
-	if err := r.Cache.Get(ctx, sourceSecretName, sourceSecret); err != nil {
+	if err := r.Get(ctx, sourceSecretName, sourceSecret); err != nil {
 		if apierrors.IsNotFound(err) {
 			logger.V(4).Info("Source secret not found", "secret", sourceSecretName.String())
 			return nil
@@ -231,7 +231,7 @@ func (r *ClusterProfileCredSyncer) syncCreds(ctx context.Context, msa *authv1bet
 		Name:      syncedCredName,
 	}
 
-	err := r.Cache.Get(ctx, syncedCredNamespacedName, syncedCred)
+	err := r.Get(ctx, syncedCredNamespacedName, syncedCred)
 	if err != nil {
 		if !apierrors.IsNotFound(err) {
 			return errors.Wrapf(err, "failed to get synced credential %s", syncedCredNamespacedName.String())
@@ -341,7 +341,7 @@ func isOwnedByClusterProfile(secret *corev1.Secret, cp *cpv1alpha1.ClusterProfil
 func (r *ClusterProfileCredSyncer) cleanupOrphanedCreds(ctx context.Context, cp *cpv1alpha1.ClusterProfile, msaList []authv1beta1.ManagedServiceAccount) error {
 	// List only secrets with LabelKeySyncedFrom label in the clusterprofile namespace
 	secretList := &corev1.SecretList{}
-	if err := r.Cache.List(ctx, secretList,
+	if err := r.List(ctx, secretList,
 		client.InNamespace(cp.Namespace),
 		client.HasLabels{LabelKeySyncedFrom},
 	); err != nil {

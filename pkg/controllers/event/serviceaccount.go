@@ -6,11 +6,12 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/util/workqueue"
-	"open-cluster-management.io/managed-serviceaccount/pkg/common"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+
+	"open-cluster-management.io/managed-serviceaccount/pkg/common"
 )
 
 var _ handler.TypedEventHandler[*corev1.ServiceAccount, reconcile.Request] = &serviceAccountEventHandler[*corev1.ServiceAccount]{}
