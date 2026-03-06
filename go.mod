@@ -19,7 +19,7 @@ require (
 	open-cluster-management.io/addon-framework v1.2.0
 	open-cluster-management.io/api v1.2.0
 	sigs.k8s.io/cluster-inventory-api v0.0.0-20251124125836-445319b6307a
-	sigs.k8s.io/controller-runtime v0.23.1
+	sigs.k8s.io/controller-runtime v0.23.3
 )
 
 require (
