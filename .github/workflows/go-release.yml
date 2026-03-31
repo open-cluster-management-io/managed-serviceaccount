@@ -147,7 +147,7 @@ jobs:
         with:
           fetch-depth: 1
       - name: setup helm
-        uses: azure/setup-helm@v4
+        uses: azure/setup-helm@v5
       - name: chart package
         run: |
           mkdir -p release
