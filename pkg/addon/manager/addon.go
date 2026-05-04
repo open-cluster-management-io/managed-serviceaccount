@@ -5,8 +5,10 @@ import (
 	"embed"
 	"encoding/base64"
 
+	certificatesv1 "k8s.io/api/certificates/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
@@ -52,7 +54,22 @@ func NewRegistrationOption(nativeClient kubernetes.Interface) *agent.Registratio
 func setupPermission(nativeClient kubernetes.Interface) agent.PermissionConfigFunc {
 	return func(cluster *clusterv1.ManagedCluster, addon *addonv1alpha1.ManagedClusterAddOn) error {
 		namespace := cluster.Name
-		agentUser := "system:open-cluster-management:cluster:" + cluster.Name + ":addon:managed-serviceaccount:agent:addon-agent"
+
+		var subjects []rbacv1.Subject
+		if addon.Status.KubeClientDriver == "token" {
+			subjects = rbacSubjectsFromKubeClientRegistration(addon)
+			if len(subjects) == 0 {
+				return &agent.SubjectNotReadyError{}
+			}
+		} else {
+			subjects = []rbacv1.Subject{
+				{
+					Kind: rbacv1.UserKind,
+					Name: agent.DefaultUser(cluster.Name, common.AddonName, common.AgentName),
+				},
+			}
+		}
+
 		role := &rbacv1.Role{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "managed-serviceaccount-addon-agent",
@@ -103,12 +120,7 @@ func setupPermission(nativeClient kubernetes.Interface) agent.PermissionConfigFu
 				Kind: "Role",
 				Name: "managed-serviceaccount-addon-agent",
 			},
-			Subjects: []rbacv1.Subject{
-				{
-					Kind: rbacv1.UserKind,
-					Name: agentUser,
-				},
-			},
+			Subjects: subjects,
 		}
 
 		if _, err := nativeClient.RbacV1().Roles(namespace).Create(
@@ -129,4 +141,40 @@ func setupPermission(nativeClient kubernetes.Interface) agent.PermissionConfigFu
 		}
 		return nil
 	}
+}
+
+// rbacSubjectsFromKubeClientRegistration mirrors addon-framework registration subject handling for
+// kubernetes.io/kube-apiserver-client: use the user and groups published in ManagedClusterAddOn status
+// (required for klusterlet token registration). The system:authenticated group is omitted so bindings stay narrow.
+func rbacSubjectsFromKubeClientRegistration(addon *addonv1alpha1.ManagedClusterAddOn) []rbacv1.Subject {
+	var subject *addonv1alpha1.Subject
+	for i := range addon.Status.Registrations {
+		if addon.Status.Registrations[i].SignerName == certificatesv1.KubeAPIServerClientSignerName {
+			subject = &addon.Status.Registrations[i].Subject
+			break
+		}
+	}
+	if subject == nil || equality.Semantic.DeepEqual(*subject, addonv1alpha1.Subject{}) {
+		return nil
+	}
+
+	var subjects []rbacv1.Subject
+	if subject.User != "" {
+		subjects = append(subjects, rbacv1.Subject{
+			Kind:     rbacv1.UserKind,
+			APIGroup: rbacv1.GroupName,
+			Name:     subject.User,
+		})
+	}
+	for _, group := range subject.Groups {
+		if group == "system:authenticated" {
+			continue
+		}
+		subjects = append(subjects, rbacv1.Subject{
+			Kind:     rbacv1.GroupKind,
+			APIGroup: rbacv1.GroupName,
+			Name:     group,
+		})
+	}
+	return subjects
 }
