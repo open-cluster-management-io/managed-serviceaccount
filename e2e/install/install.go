@@ -12,12 +12,12 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
-	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	addonv1alpha1 "open-cluster-management.io/api/addon/v1alpha1"
 	clusterv1 "open-cluster-management.io/api/cluster/v1"
@@ -50,23 +50,23 @@ var _ = Describe("Addon Installation Test", Label("install"),
 			c := f.HubRuntimeClient()
 			By("Prepare a AddOnDeploymentConfig for managed-serviceaccount addon")
 			Eventually(func() error {
-				err := c.Create(context.TODO(), &addonv1alpha1.AddOnDeploymentConfig{
+				deployConfigSpec := addonv1alpha1.AddOnDeploymentConfigSpec{
+					NodePlacement: &addonv1alpha1.NodePlacement{
+						NodeSelector: nodeSelector,
+						Tolerations:  tolerations,
+					},
+				}
+
+				deployConfig := &addonv1alpha1.AddOnDeploymentConfig{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      deployConfigName,
 						Namespace: f.TestClusterName(),
 					},
-					Spec: addonv1alpha1.AddOnDeploymentConfigSpec{
-						NodePlacement: &addonv1alpha1.NodePlacement{
-							NodeSelector: nodeSelector,
-							Tolerations:  tolerations,
-						},
-					},
-				})
-				// Ignore already exists error so it is easier to debug locally
-				if errors.IsAlreadyExists(err) {
-					return nil
 				}
-
+				_, err := controllerutil.CreateOrUpdate(context.TODO(), c, deployConfig, func() error {
+					deployConfig.Spec = deployConfigSpec
+					return nil
+				})
 				return err
 			}).WithTimeout(time.Minute).ShouldNot(HaveOccurred())
 
