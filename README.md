@@ -136,6 +136,38 @@ You can retrieve the token from the secret:
 kubectl -n <your-cluster-name> get secret my-sample -o jsonpath='{.data.token}' | base64 -d
 ```
 
+## Hub Manager Metrics
+
+The Helm chart renders a metrics `Service` for the hub addon manager so that
+Prometheus can scrape it. Both the `Service` and the optional `ServiceMonitor`
+are only rendered when the hub manager itself is deployed; selecting
+`hubDeployMode: AddOnTemplate` without the `ClusterProfile` feature gate skips
+them along with the manager `Deployment`.
+
+Upgrading an existing install creates the additive
+`managed-serviceaccount-addon-manager-metrics` `ClusterIP` Service in the
+release namespace whenever the hub manager `Deployment` is rendered. The Service
+only exposes the manager pod's existing metrics port and never changes the
+addon's behavior; the actual Prometheus wiring
+(`metrics.serviceMonitor.enabled`) stays opt-in.
+
+| `values.yaml` key | Default | Purpose |
+| --- | --- | --- |
+| `metrics.port` | `38080` | Port number used for the Service `port`, manager `--metrics-bind-address`, and manager pod's `metrics` container port. |
+| `metrics.serviceMonitor.enabled` | `false` | Render a `monitoring.coreos.com/v1` ServiceMonitor that targets the metrics Service. Requires the Prometheus Operator's `ServiceMonitor` CRD to already exist on the hub cluster; the chart does not install it. |
+| `metrics.serviceMonitor.labels` | `{}` | Additional labels to place on the ServiceMonitor, for example `release: prometheus` when using the kube-prometheus-stack release selector. |
+
+Example overrides:
+
+```yaml
+metrics:
+  port: 38080
+  serviceMonitor:
+    enabled: true
+    labels:
+      release: prometheus
+```
+
 ## References
 
 - Design: [https://github.com/open-cluster-management-io/enhancements/tree/main/enhancements/sig-architecture/19-projected-serviceaccount-token](https://github.com/open-cluster-management-io/enhancements/tree/main/enhancements/sig-architecture/19-projected-serviceaccount-token)

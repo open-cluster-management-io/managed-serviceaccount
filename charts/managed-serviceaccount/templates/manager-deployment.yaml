@@ -27,6 +27,7 @@ spec:
             - --leader-elect=true
             {{- end }}
             - --deploy-mode={{ .Values.hubDeployMode }}
+            - --metrics-bind-address=:{{ .Values.metrics.port | default 38080 }}
             - --agent-image-name={{ .Values.image }}:{{ .Values.tag | default (print "v" .Chart.Version) }}
             {{- if .Values.featureGates }}
             - --feature-gates=EphemeralIdentity={{ .Values.featureGates.ephemeralIdentity | default false}},ClusterProfile={{ .Values.featureGates.clusterProfile | default false}}
@@ -34,4 +35,8 @@ spec:
             {{- if .Values.agentImagePullSecret }}
             - --agent-image-pull-secret={{ .Values.agentImagePullSecret }}
             {{- end}}
+          ports:
+            - name: metrics
+              containerPort: {{ .Values.metrics.port | default 38080 }}
+              protocol: TCP
 {{- end }}

@@ -12,6 +12,12 @@ featureGates:
 
 agentImagePullSecret: ""
 
+metrics:
+  port: 38080
+  serviceMonitor:
+    enabled: false
+    labels: {}
+
 # Hub deploy mode: AddOnTemplate or Deployment
 hubDeployMode: Deployment
 
