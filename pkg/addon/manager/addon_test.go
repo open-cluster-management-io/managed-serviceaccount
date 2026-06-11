@@ -5,10 +5,12 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	appsv1 "k8s.io/api/apps/v1"
 	certificatesv1 "k8s.io/api/certificates/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	fakekube "k8s.io/client-go/kubernetes/fake"
 	clienttesting "k8s.io/client-go/testing"
 	"open-cluster-management.io/addon-framework/pkg/addonfactory"
@@ -204,6 +206,109 @@ func TestManifestAddonAgent(t *testing.T) {
 			assert.ElementsMatch(t, c.expectedManifestNames, actual)
 		})
 	}
+}
+
+func TestManifestAddonAgentManagedServiceAccountNameOverride(t *testing.T) {
+	clusterName := "cluster1"
+	addonName := "addon1"
+	imageName := "imageName1"
+	customName := "custom-msa"
+
+	manifests := renderTestManifests(
+		t,
+		newTestCluster(clusterName),
+		newTestAddOn(addonName, clusterName),
+		GetDefaultValues(imageName, nil),
+		func(cluster *clusterv1.ManagedCluster, addon *addonv1alpha1.ManagedClusterAddOn) (addonfactory.Values, error) {
+			return addonfactory.Values{
+				"ManagedServiceAccountName": customName,
+			}, nil
+		},
+	)
+
+	serviceAccount := findServiceAccount(t, manifests, customName)
+	assert.Equal(t, addonName, serviceAccount.Namespace)
+
+	roleBinding := findRoleBinding(t, manifests, "open-cluster-management:managed-serviceaccount:addon-agent")
+	assert.Len(t, roleBinding.Subjects, 1)
+	assert.Equal(t, customName, roleBinding.Subjects[0].Name)
+	assert.Equal(t, addonName, roleBinding.Subjects[0].Namespace)
+
+	clusterRoleBinding := findClusterRoleBinding(t, manifests, "open-cluster-management:managed-serviceaccount:addon-agent")
+	assert.Len(t, clusterRoleBinding.Subjects, 1)
+	assert.Equal(t, customName, clusterRoleBinding.Subjects[0].Name)
+	assert.Equal(t, addonName, clusterRoleBinding.Subjects[0].Namespace)
+
+	deployment := findDeployment(t, manifests, "managed-serviceaccount-addon-agent")
+	assert.Equal(t, customName, deployment.Spec.Template.Spec.ServiceAccountName)
+}
+
+func renderTestManifests(
+	t *testing.T,
+	cluster *clusterv1.ManagedCluster,
+	addon *addonv1alpha1.ManagedClusterAddOn,
+	getValuesFuncs ...addonfactory.GetValuesFunc,
+) []runtime.Object {
+	t.Helper()
+
+	agentFactory := addonfactory.NewAgentAddonFactory(common.AddonName, FS, "manifests/templates").
+		WithGetValuesFuncs(getValuesFuncs...)
+
+	addOnAgent, err := agentFactory.BuildTemplateAgentAddon()
+	assert.NoError(t, err)
+
+	manifests, err := addOnAgent.Manifests(cluster, addon)
+	assert.NoError(t, err)
+
+	return manifests
+}
+
+func findDeployment(t *testing.T, manifests []runtime.Object, name string) *appsv1.Deployment {
+	t.Helper()
+	for _, manifest := range manifests {
+		deployment, ok := manifest.(*appsv1.Deployment)
+		if ok && deployment.Name == name {
+			return deployment
+		}
+	}
+	t.Fatalf("deployment %q not found", name)
+	return nil
+}
+
+func findServiceAccount(t *testing.T, manifests []runtime.Object, name string) *corev1.ServiceAccount {
+	t.Helper()
+	for _, manifest := range manifests {
+		serviceAccount, ok := manifest.(*corev1.ServiceAccount)
+		if ok && serviceAccount.Name == name {
+			return serviceAccount
+		}
+	}
+	t.Fatalf("serviceaccount %q not found", name)
+	return nil
+}
+
+func findRoleBinding(t *testing.T, manifests []runtime.Object, name string) *rbacv1.RoleBinding {
+	t.Helper()
+	for _, manifest := range manifests {
+		roleBinding, ok := manifest.(*rbacv1.RoleBinding)
+		if ok && roleBinding.Name == name {
+			return roleBinding
+		}
+	}
+	t.Fatalf("rolebinding %q not found", name)
+	return nil
+}
+
+func findClusterRoleBinding(t *testing.T, manifests []runtime.Object, name string) *rbacv1.ClusterRoleBinding {
+	t.Helper()
+	for _, manifest := range manifests {
+		clusterRoleBinding, ok := manifest.(*rbacv1.ClusterRoleBinding)
+		if ok && clusterRoleBinding.Name == name {
+			return clusterRoleBinding
+		}
+	}
+	t.Fatalf("clusterrolebinding %q not found", name)
+	return nil
 }
 
 func newTestImagePullSecret() *corev1.Secret {

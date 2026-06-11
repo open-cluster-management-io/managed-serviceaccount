@@ -9,5 +9,5 @@ roleRef:
   name: open-cluster-management:managed-serviceaccount:addon-agent
 subjects:
   - kind: ServiceAccount
-    name: managed-serviceaccount
+    name: {{ .ManagedServiceAccountName }}
     namespace: {{ .AddonInstallNamespace }}

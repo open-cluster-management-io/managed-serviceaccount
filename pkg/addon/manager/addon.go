@@ -30,15 +30,19 @@ const (
 //go:embed manifests/templates
 var FS embed.FS
 
+const DefaultManagedServiceAccountName = "managed-serviceaccount"
+
 func GetDefaultValues(image string, imagePullSecret *corev1.Secret) addonfactory.GetValuesFunc {
 	return func(cluster *clusterv1.ManagedCluster, addon *addonv1alpha1.ManagedClusterAddOn) (addonfactory.Values, error) {
 		manifestConfig := struct {
-			ClusterName         string
-			Image               string
-			ImagePullSecretData string
+			ClusterName               string
+			Image                     string
+			ImagePullSecretData       string
+			ManagedServiceAccountName string
 		}{
-			ClusterName: cluster.Name,
-			Image:       image,
+			ClusterName:               cluster.Name,
+			Image:                     image,
+			ManagedServiceAccountName: DefaultManagedServiceAccountName,
 		}
 
 		if imagePullSecret != nil {
