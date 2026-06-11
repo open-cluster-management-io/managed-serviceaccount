@@ -30,6 +30,15 @@ jobs:
       - name: build
         run: make build
 
+  images-cp-creds:
+    name: images-cp-creds
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout code
+        uses: actions/checkout@v6
+      - name: images-cp-creds
+        run: make images-cp-creds
+
   unit:
     name: unit
     runs-on: ubuntu-latest
