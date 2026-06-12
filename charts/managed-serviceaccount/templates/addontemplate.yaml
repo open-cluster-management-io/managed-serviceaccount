@@ -69,6 +69,10 @@ spec:
                 - agent
                 image: {{ .Values.image }}:{{ .Values.tag | default (print "v" .Chart.Version) }}
                 imagePullPolicy: IfNotPresent
+                ports:
+                - name: metrics
+                  containerPort: 38080
+                  protocol: TCP
                 livenessProbe:
                   httpGet:
                     path: /healthz
@@ -77,6 +81,40 @@ spec:
                   periodSeconds: 10
                 name: addon-agent
               serviceAccount: managed-serviceaccount
+      - apiVersion: v1
+        kind: Service
+        metadata:
+          name: managed-serviceaccount-addon-agent
+          namespace: open-cluster-management-agent-addon
+          labels:
+            addon-agent: managed-serviceaccount
+        spec:
+          selector:
+            addon-agent: managed-serviceaccount
+          ports:
+          - name: metrics
+            port: 38080
+            targetPort: metrics
+            protocol: TCP
+{{ if .Values.agentMetrics.serviceMonitor.enabled }}
+      - apiVersion: monitoring.coreos.com/v1
+        kind: ServiceMonitor
+        metadata:
+          name: managed-serviceaccount-addon-agent
+          namespace: open-cluster-management-agent-addon
+{{ with .Values.agentMetrics.serviceMonitor.labels }}
+          labels:
+{{ toYaml . | indent 12 }}
+{{ end }}
+        spec:
+          endpoints:
+          - path: /metrics
+            scheme: http
+            port: metrics
+          selector:
+            matchLabels:
+              addon-agent: managed-serviceaccount
+{{ end }}
       - apiVersion: rbac.authorization.k8s.io/v1
         kind: Role
         metadata:

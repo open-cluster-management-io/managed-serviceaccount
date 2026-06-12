@@ -1,0 +1,21 @@
+{{ if eq .AgentServiceMonitorEnabled "true" }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: managed-serviceaccount-addon-agent
+  namespace: {{ .AddonInstallNamespace }}
+{{- if .AgentServiceMonitorLabels }}
+  labels:
+{{- range $key, $value := .AgentServiceMonitorLabels }}
+    {{ $key }}: "{{ $value }}"
+{{- end }}
+{{- end }}
+spec:
+  endpoints:
+    - path: /metrics
+      scheme: http
+      port: metrics
+  selector:
+    matchLabels:
+      addon-agent: managed-serviceaccount
+{{ end }}

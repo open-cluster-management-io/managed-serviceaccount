@@ -12,6 +12,11 @@ featureGates:
 
 agentImagePullSecret: ""
 
+agentMetrics:
+  serviceMonitor:
+    enabled: false
+    labels: {}
+
 # Hub deploy mode: AddOnTemplate or Deployment
 hubDeployMode: Deployment
 

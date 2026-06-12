@@ -136,6 +136,61 @@ You can retrieve the token from the secret:
 kubectl -n <your-cluster-name> get secret my-sample -o jsonpath='{.data.token}' | base64 -d
 ```
 
+## Agent Metrics Scraping
+
+The addon agent exposes Prometheus metrics on port `38080`. The agent metrics
+`Service` is installed with the agent. Rendering a `ServiceMonitor` is opt-in
+and requires the Prometheus Operator `ServiceMonitor` CRD to already exist on
+the cluster where the agent is installed. The chart and addon do not install
+that CRD.
+
+The opt-in mechanism depends on the install mode:
+
+- In the default manager/agent Deployment mode, configure the target
+  `ManagedClusterAddOn` with an `AddOnDeploymentConfig`.
+- In AddOnTemplate mode, enable the ServiceMonitor in Helm values because the
+  agent workload is rendered into the `AddOnTemplate` at install time.
+
+Deployment mode example:
+
+```yaml
+apiVersion: addon.open-cluster-management.io/v1alpha1
+kind: AddOnDeploymentConfig
+metadata:
+  name: managed-serviceaccount-agent-metrics
+  namespace: <your-cluster-name>
+spec:
+  customizedVariables:
+  - name: AgentServiceMonitorEnabled
+    value: "true"
+  - name: AgentServiceMonitorLabels
+    value: "release=prometheus"
+---
+apiVersion: addon.open-cluster-management.io/v1alpha1
+kind: ManagedClusterAddOn
+metadata:
+  name: managed-serviceaccount
+  namespace: <your-cluster-name>
+spec:
+  configs:
+  - group: addon.open-cluster-management.io
+    resource: addondeploymentconfigs
+    namespace: <your-cluster-name>
+    name: managed-serviceaccount-agent-metrics
+```
+
+AddOnTemplate mode example:
+
+```shell
+helm install \
+    -n open-cluster-management-addon --create-namespace \
+    managed-serviceaccount ocm/managed-serviceaccount \
+    --set hubDeployMode=AddOnTemplate \
+    --set targetCluster=<your-cluster-name> \
+    --set agentMetrics.serviceMonitor.enabled=true \
+    --set agentMetrics.serviceMonitor.labels.release=prometheus
+```
+
 ## References
 
 - Design: [https://github.com/open-cluster-management-io/enhancements/tree/main/enhancements/sig-architecture/19-projected-serviceaccount-token](https://github.com/open-cluster-management-io/enhancements/tree/main/enhancements/sig-architecture/19-projected-serviceaccount-token)

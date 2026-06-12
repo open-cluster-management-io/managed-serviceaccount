@@ -4,11 +4,15 @@ import (
 	"context"
 	"embed"
 	"encoding/base64"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/utils/ptr"
 
@@ -22,15 +26,42 @@ import (
 //go:embed manifests/templates
 var FS embed.FS
 
+var serviceMonitorGroupVersion = schema.GroupVersion{
+	Group:   "monitoring.coreos.com",
+	Version: "v1",
+}
+
+func NewAgentAddonFactory(addonName string, fs embed.FS, dir string) *addonfactory.AgentAddonFactory {
+	scheme := runtime.NewScheme()
+	addServiceMonitorToScheme(scheme)
+	return addonfactory.NewAgentAddonFactory(addonName, fs, dir).WithScheme(scheme)
+}
+
+func addServiceMonitorToScheme(scheme *runtime.Scheme) {
+	scheme.AddKnownTypeWithName(
+		serviceMonitorGroupVersion.WithKind("ServiceMonitor"),
+		&unstructured.Unstructured{},
+	)
+	scheme.AddKnownTypeWithName(
+		serviceMonitorGroupVersion.WithKind("ServiceMonitorList"),
+		&unstructured.UnstructuredList{},
+	)
+	metav1.AddToGroupVersion(scheme, serviceMonitorGroupVersion)
+}
+
 func GetDefaultValues(image string, imagePullSecret *corev1.Secret) addonfactory.GetValuesFunc {
 	return func(cluster *clusterv1.ManagedCluster, addon *addonv1alpha1.ManagedClusterAddOn) (addonfactory.Values, error) {
 		manifestConfig := struct {
-			ClusterName         string
-			Image               string
-			ImagePullSecretData string
+			ClusterName                string
+			Image                      string
+			ImagePullSecretData        string
+			AgentServiceMonitorEnabled string
+			AgentServiceMonitorLabels  map[string]string
 		}{
-			ClusterName: cluster.Name,
-			Image:       image,
+			ClusterName:                cluster.Name,
+			Image:                      image,
+			AgentServiceMonitorEnabled: "false",
+			AgentServiceMonitorLabels:  map[string]string{},
 		}
 
 		if imagePullSecret != nil {
@@ -39,6 +70,32 @@ func GetDefaultValues(image string, imagePullSecret *corev1.Secret) addonfactory
 
 		return addonfactory.StructToValues(manifestConfig), nil
 	}
+}
+
+func ToAddOnDeploymentConfigValues(config addonv1alpha1.AddOnDeploymentConfig) (addonfactory.Values, error) {
+	values, err := addonfactory.ToAddOnDeploymentConfigValues(config)
+	if err != nil {
+		return nil, err
+	}
+
+	if raw, ok := values["AgentServiceMonitorLabels"].(string); ok {
+		values["AgentServiceMonitorLabels"] = parseServiceMonitorLabels(raw)
+	}
+
+	return values, nil
+}
+
+func parseServiceMonitorLabels(raw string) map[string]string {
+	labels := map[string]string{}
+	for _, item := range strings.Split(raw, ",") {
+		key, value, ok := strings.Cut(item, "=")
+		key = strings.TrimSpace(key)
+		if !ok || len(key) == 0 {
+			continue
+		}
+		labels[key] = strings.TrimSpace(value)
+	}
+	return labels
 }
 
 func NewRegistrationOption(nativeClient kubernetes.Interface) *agent.RegistrationOption {

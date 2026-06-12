@@ -211,7 +211,7 @@ func (o *HubManagerOptions) Run() error {
 			}
 		}
 
-		agentFactory := addonfactory.NewAgentAddonFactory(common.AddonName, manager.FS, "manifests/templates").
+		agentFactory := manager.NewAgentAddonFactory(common.AddonName, manager.FS, "manifests/templates").
 			WithConfigGVRs(utils.AddOnDeploymentConfigGVR).
 			WithGetValuesFuncs(
 				manager.GetDefaultValues(o.AddonAgentImageName, imagePullSecret),
@@ -222,7 +222,7 @@ func (o *HubManagerOptions) Run() error {
 				),
 				addonfactory.GetAddOnDeploymentConfigValues(
 					utils.NewAddOnDeploymentConfigGetter(addonClient),
-					addonfactory.ToAddOnDeploymentConfigValues,
+					manager.ToAddOnDeploymentConfigValues,
 				),
 			).
 			WithAgentRegistrationOption(manager.NewRegistrationOption(nativeClient)).

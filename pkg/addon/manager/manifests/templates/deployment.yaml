@@ -44,6 +44,10 @@ spec:
             - --cluster-name={{ .ClusterName }}
             - --kubeconfig=/etc/hub/kubeconfig
             - --lease-health-check=true
+          ports:
+            - name: metrics
+              containerPort: 38080
+              protocol: TCP
           volumeMounts:
             - name: hub-kubeconfig
               mountPath: /etc/hub/
