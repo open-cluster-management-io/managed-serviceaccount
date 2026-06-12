@@ -235,7 +235,7 @@ func (o *AgentOptions) Run() error {
 		go leaseUpdater.Start(ctx)
 	}
 
-	cc, err := addonutils.NewConfigChecker("managed-serviceaccount-agent", getHubKubeconfigPath())
+	cc, err := addonutils.NewConfigChecker("managed-serviceaccount-agent", o.configCheckerPaths()...)
 	if err != nil {
 		klog.Fatalf("unable to create config checker for controller %v", "ManagedServiceAccount")
 	}
@@ -250,6 +250,14 @@ func (o *AgentOptions) Run() error {
 	}
 
 	return nil
+}
+
+func (o *AgentOptions) configCheckerPaths() []string {
+	paths := []string{getHubKubeconfigPath()}
+	if len(o.SpokeKubeconfig) > 0 {
+		paths = append(paths, o.SpokeKubeconfig)
+	}
+	return paths
 }
 
 // serveHealthProbes serves health probes and configchecker.
