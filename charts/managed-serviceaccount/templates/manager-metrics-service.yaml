@@ -1,0 +1,17 @@
+{{- if include "managed-serviceaccount.hubManager.enabled" . }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: managed-serviceaccount-addon-manager-metrics
+  namespace: {{ .Release.Namespace }}
+  labels:
+    open-cluster-management.io/addon: managed-serviceaccount
+spec:
+  selector:
+    open-cluster-management.io/addon: managed-serviceaccount
+  ports:
+    - name: metrics
+      port: 38080
+      targetPort: metrics
+      protocol: TCP
+{{- end }}

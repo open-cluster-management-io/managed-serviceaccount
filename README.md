@@ -72,6 +72,18 @@ NAMESPACE        NAME                     AVAILABLE   DEGRADED   PROGRESSING
 
 ## Usage
 
+### Prometheus Metrics Scraping
+
+Set `prometheus.enabled=true` to expose addon metrics with Prometheus
+`ServiceMonitor` resources. For addon agent metrics, configure the
+`ManagedClusterAddOn` with an `AddOnDeploymentConfig`; see
+`deploy/samples/addon-agent-metrics-scraping.yaml` for an example.
+
+The Prometheus Operator `ServiceMonitor` CRD must exist on the cluster where the
+ServiceMonitor is applied: the hub cluster for manager metrics, and the managed
+cluster for agent metrics. If the CRD is missing, the installation or addon
+status reports the apply failure.
+
 ### Creating a ManagedServiceAccount
 
 Create a sample ManagedServiceAccount resource:

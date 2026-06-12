@@ -1,0 +1,19 @@
+{{- if and .Values.prometheus.enabled (include "managed-serviceaccount.hubManager.enabled" .) }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: managed-serviceaccount-addon-manager
+  namespace: {{ .Release.Namespace }}
+{{- with .Values.prometheus.serviceMonitor.labels }}
+  labels:
+{{- toYaml . | nindent 4 }}
+{{- end }}
+spec:
+  endpoints:
+    - path: /metrics
+      scheme: http
+      port: metrics
+  selector:
+    matchLabels:
+      open-cluster-management.io/addon: managed-serviceaccount
+{{- end }}

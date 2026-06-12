@@ -1,0 +1,21 @@
+{{- if .Prometheus.Enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: managed-serviceaccount-addon-agent
+  namespace: {{ .AddonInstallNamespace }}
+{{- with .Prometheus.ServiceMonitor.Labels }}
+  labels:
+{{- range $key, $value := . }}
+    {{ printf "%q" $key }}: {{ printf "%q" $value }}
+{{- end }}
+{{- end }}
+spec:
+  endpoints:
+    - path: /metrics
+      scheme: http
+      port: metrics
+  selector:
+    matchLabels:
+      addon-agent: managed-serviceaccount
+{{- end }}

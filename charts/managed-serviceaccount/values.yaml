@@ -3,6 +3,10 @@ image: quay.io/open-cluster-management/managed-serviceaccount
 tag:
 agentInstallAll: true
 
+# Target managed cluster for rendering a ManagedClusterAddOn directly.
+# Leave empty to rely on the ClusterManagementAddOn install strategy.
+targetCluster: ""
+
 # Number of replicas
 replicas: 1
 
@@ -11,6 +15,11 @@ featureGates:
   clusterProfile: false
 
 agentImagePullSecret: ""
+
+prometheus:
+  enabled: false
+  serviceMonitor:
+    labels: {}
 
 # Hub deploy mode: AddOnTemplate or Deployment
 hubDeployMode: Deployment

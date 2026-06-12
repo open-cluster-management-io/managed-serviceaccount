@@ -54,6 +54,10 @@ spec:
             - --cluster-name={{ .ClusterName }}
             - --kubeconfig=/etc/hub/kubeconfig
             - --lease-health-check=true
+          ports:
+            - name: metrics
+              containerPort: 38080
+              protocol: TCP
           volumeMounts:
             - name: hub-kubeconfig
               mountPath: /etc/hub/
@@ -68,7 +72,7 @@ spec:
         - name: hub-kubeconfig
           secret:
             secretName: managed-serviceaccount-hub-kubeconfig
-{{ if .ImagePullSecretData }}
+{{- if .ImagePullSecretData }}
       imagePullSecrets:
       - name: open-cluster-management-image-pull-credentials
 {{- end }}

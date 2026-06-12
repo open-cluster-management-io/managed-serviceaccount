@@ -10,11 +10,15 @@ import (
 	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
 	fakekube "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/utils/ptr"
 	"open-cluster-management.io/addon-framework/pkg/addonfactory"
 	"open-cluster-management.io/addon-framework/pkg/agent"
+	"open-cluster-management.io/addon-framework/pkg/utils"
 	addonv1beta1 "open-cluster-management.io/api/addon/v1beta1"
+	fakeaddon "open-cluster-management.io/api/client/addon/clientset/versioned/fake"
 	clusterv1 "open-cluster-management.io/api/cluster/v1"
 	"open-cluster-management.io/managed-serviceaccount/pkg/common"
 )
@@ -166,6 +170,7 @@ func TestManifestAddonAgent(t *testing.T) {
 		"open-cluster-management:managed-serviceaccount:addon-agent",
 		"open-cluster-management:managed-serviceaccount:addon-agent",
 		"managed-serviceaccount-addon-agent",
+		"managed-serviceaccount-addon-agent",
 	}
 
 	cases := []struct {
@@ -186,14 +191,12 @@ func TestManifestAddonAgent(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			agentFactory := addonfactory.NewAgentAddonFactory(common.AddonName, FS, "manifests/templates").
-				WithGetValuesFuncs(c.getValuesFunc...)
-
-			addOnAgent, err := agentFactory.BuildTemplateAgentAddon()
-			assert.NoError(t, err)
-
-			manifests, err := addOnAgent.Manifests(context.Background(), newTestCluster(clusterName), newTestAddOn(addonName, clusterName))
-			assert.NoError(t, err)
+			manifests := renderTestManifests(
+				t,
+				newTestCluster(clusterName),
+				newTestAddOn(addonName, clusterName),
+				c.getValuesFunc...,
+			)
 
 			actual := []string{}
 			var agentDeployment *appsv1.Deployment
@@ -233,6 +236,148 @@ func assertAgentSecurityContext(t *testing.T, deployment *appsv1.Deployment) {
 		ReadOnlyRootFilesystem:   ptr.To(true),
 		Capabilities:             &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}},
 	}, podSpec.Containers[0].SecurityContext)
+}
+
+func TestManifestAddonServiceMonitor(t *testing.T) {
+	clusterName := "cluster1"
+	cases := []struct {
+		name           string
+		variables      []addonv1beta1.CustomizedVariable
+		expectMonitor  bool
+		expectedLabels map[string]string
+	}{
+		{
+			name:          "disabled by default",
+			expectMonitor: false,
+		},
+		{
+			name: "enabled without labels",
+			variables: []addonv1beta1.CustomizedVariable{
+				{Name: prometheusEnabledVariableName, Value: "true"},
+			},
+			expectMonitor: true,
+		},
+		{
+			name: "labels from AddOnDeploymentConfig",
+			variables: []addonv1beta1.CustomizedVariable{
+				{Name: prometheusEnabledVariableName, Value: "true"},
+				{Name: prometheusServiceMonitorLabelsVariableName, Value: `{"release":"prometheus","team":"platform"}`},
+			},
+			expectMonitor:  true,
+			expectedLabels: map[string]string{"release": "prometheus", "team": "platform"},
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			manifests := renderWithConfig(t, clusterName, "addon1", "imageName1", c.variables...)
+
+			var serviceMonitor *unstructured.Unstructured
+			for _, manifest := range manifests {
+				if object, ok := manifest.(*unstructured.Unstructured); ok && object.GetKind() == "ServiceMonitor" {
+					serviceMonitor = object
+				}
+			}
+			if !c.expectMonitor {
+				assert.Nil(t, serviceMonitor, "ServiceMonitor should not be rendered when Prometheus is disabled")
+				return
+			}
+			if assert.NotNil(t, serviceMonitor, "servicemonitor not found") {
+				assert.Equal(t, "managed-serviceaccount-addon-agent", serviceMonitor.GetName())
+				assert.Equal(t, c.expectedLabels, serviceMonitor.GetLabels())
+			}
+		})
+	}
+}
+
+func TestToAddOnPrometheusValuesRejectsInvalidServiceMonitorLabels(t *testing.T) {
+	cases := []struct {
+		name string
+		raw  string
+	}{
+		{
+			name: "invalid json",
+			raw:  "not-json",
+		},
+		{
+			name: "non string label value",
+			raw:  `{"release":1}`,
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			_, err := ToAddOnPrometheusValues(addonv1beta1.AddOnDeploymentConfig{
+				Spec: addonv1beta1.AddOnDeploymentConfigSpec{
+					CustomizedVariables: []addonv1beta1.CustomizedVariable{
+						{Name: prometheusServiceMonitorLabelsVariableName, Value: c.raw},
+					},
+				},
+			})
+			assert.Error(t, err)
+		})
+	}
+}
+
+func renderTestManifests(
+	t *testing.T,
+	cluster *clusterv1.ManagedCluster,
+	addon *addonv1beta1.ManagedClusterAddOn,
+	getValuesFuncs ...addonfactory.GetValuesFunc,
+) []runtime.Object {
+	t.Helper()
+
+	agentFactory := addonfactory.NewAgentAddonFactory(common.AddonName, FS, "manifests/templates").
+		WithScheme(NewAgentScheme()).
+		WithGetValuesFuncs(getValuesFuncs...)
+
+	addOnAgent, err := agentFactory.BuildTemplateAgentAddon()
+	assert.NoError(t, err)
+
+	manifests, err := addOnAgent.Manifests(context.Background(), cluster, addon)
+	assert.NoError(t, err)
+
+	return manifests
+}
+
+func renderWithConfig(t *testing.T, clusterName, addonName, imageName string, variables ...addonv1beta1.CustomizedVariable) []runtime.Object {
+	t.Helper()
+	config := &addonv1beta1.AddOnDeploymentConfig{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "metrics-config",
+			Namespace: clusterName,
+		},
+		Spec: addonv1beta1.AddOnDeploymentConfigSpec{
+			CustomizedVariables: variables,
+		},
+	}
+	addon := newTestAddOn(addonName, clusterName)
+	addon.Status.ConfigReferences = []addonv1beta1.ConfigReference{
+		{
+			ConfigGroupResource: addonv1beta1.ConfigGroupResource{
+				Group:    utils.AddOnDeploymentConfigGVR.Group,
+				Resource: utils.AddOnDeploymentConfigGVR.Resource,
+			},
+			DesiredConfig: &addonv1beta1.ConfigSpecHash{
+				ConfigReferent: addonv1beta1.ConfigReferent{
+					Namespace: config.Namespace,
+					Name:      config.Name,
+				},
+				SpecHash: "hash",
+			},
+		},
+	}
+
+	return renderTestManifests(
+		t,
+		newTestCluster(clusterName),
+		addon,
+		GetDefaultValues(imageName, nil),
+		addonfactory.GetAddOnDeploymentConfigValues(
+			utils.NewAddOnDeploymentConfigGetter(fakeaddon.NewSimpleClientset(config)),
+			addonfactory.ToAddOnDeploymentConfigValues,
+			ToAddOnPrometheusValues,
+		),
+	)
 }
 
 func newTestImagePullSecret() *corev1.Secret {
