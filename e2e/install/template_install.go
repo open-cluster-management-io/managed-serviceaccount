@@ -52,7 +52,7 @@ var _ = Describe("Template Addon Installation Test", Label("install"), Label("te
 				}
 
 				if addon.Status.Namespace != defaultNs {
-					return fmt.Errorf("addon is not installed in default namespace")
+					return fmt.Errorf("addon is not installed in default namespace %q, got %q", defaultNs, addon.Status.Namespace)
 				}
 				return nil
 			}).WithTimeout(time.Minute).ShouldNot(HaveOccurred())
