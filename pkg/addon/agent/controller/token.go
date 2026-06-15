@@ -321,9 +321,11 @@ func (r *TokenReconciler) shouldCreateUpdateTokenSecret(msa *authv1beta1.Managed
 	}
 
 	token := secret.Data[corev1.ServiceAccountTokenKey]
-	if match, err := CheckUserInToken(r.SpokeNamespace, msa.Name, string(token)); err != nil {
+	match, err := CheckUserInToken(r.SpokeNamespace, msa.Name, string(token))
+	if err != nil {
 		return true, err
-	} else if !match {
+	}
+	if !match {
 		return true, nil
 	}
 
