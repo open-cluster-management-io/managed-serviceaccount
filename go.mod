@@ -16,7 +16,7 @@ require (
 	k8s.io/component-base v0.36.2
 	k8s.io/klog/v2 v2.140.0
 	k8s.io/utils v0.0.0-20260210185600-b8788abfbbc2
-	open-cluster-management.io/addon-framework v1.2.0
+	open-cluster-management.io/addon-framework v1.3.0
 	open-cluster-management.io/api v1.3.0
 	sigs.k8s.io/cluster-inventory-api v0.1.3
 	sigs.k8s.io/controller-runtime v0.24.1
@@ -76,8 +76,8 @@ require (
 	github.com/shopspring/decimal v1.4.0 // indirect
 	github.com/spf13/cast v1.7.0 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
-	go.opentelemetry.io/otel v1.41.0 // indirect
-	go.opentelemetry.io/otel/trace v1.41.0 // indirect
+	go.opentelemetry.io/otel v1.43.0 // indirect
+	go.opentelemetry.io/otel/trace v1.43.0 // indirect
 	go.yaml.in/yaml/v2 v2.4.4 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
 	golang.org/x/crypto v0.50.0 // indirect
@@ -98,7 +98,7 @@ require (
 	helm.sh/helm/v3 v3.19.4 // indirect
 	k8s.io/apiextensions-apiserver v0.36.0 // indirect
 	k8s.io/kube-openapi v0.0.0-20260319004828-5883c5ee87b9 // indirect
-	open-cluster-management.io/sdk-go v1.2.0 // indirect
+	open-cluster-management.io/sdk-go v1.3.0 // indirect
 	sigs.k8s.io/json v0.0.0-20250730193827-2d320260d730 // indirect
 	sigs.k8s.io/randfill v1.0.0 // indirect
 	sigs.k8s.io/structured-merge-diff/v6 v6.3.2 // indirect
