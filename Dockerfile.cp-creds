@@ -1,4 +1,4 @@
-FROM --platform=$BUILDPLATFORM golang:1.25-bookworm AS builder
+FROM --platform=$BUILDPLATFORM golang:1.26-bookworm AS builder
 ARG TARGETOS=linux
 ARG TARGETARCH
 WORKDIR /go/src/github.com/open-cluster-management.io/managed-serviceaccount
