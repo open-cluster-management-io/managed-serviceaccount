@@ -278,12 +278,10 @@ func TestReconcile(t *testing.T) {
 			newToken:               newFakeToken("new-namespace", msaName),
 			isExistingTokenInvalid: true,
 			validateFunc: func(t *testing.T, hubClient client.Client, actions []clienttesting.Action) {
-				secret := &corev1.Secret{}
-				err := hubClient.Get(context.TODO(), types.NamespacedName{
-					Namespace: clusterName,
-					Name:      msaName,
-				}, secret)
-				assert.NoError(t, err)
+				assertActions(t, actions, "create", // create serviceaccount
+					"create", // create tokenrequest
+				)
+				assertToken(t, hubClient, clusterName, msaName, newFakeToken("new-namespace", msaName), ca1)
 			},
 		},
 	}
@@ -598,6 +596,54 @@ func TestCheckTokenRefreshAfter(t *testing.T) {
 	}
 }
 
+func TestCheckUserInToken(t *testing.T) {
+	namespace := "cluster1"
+	name := "msa1"
+
+	cases := []struct {
+		name          string
+		token         string
+		expectedMatch bool
+		expectedError string
+	}{
+		{
+			name:          "matching subject",
+			token:         newFakeToken(namespace, name),
+			expectedMatch: true,
+		},
+		{
+			name:          "different namespace",
+			token:         newFakeToken("new-namespace", name),
+			expectedMatch: false,
+		},
+		{
+			name:          "missing subject",
+			token:         newFakeTokenWithClaims(map[string]interface{}{"iss": "https://kubernetes.default.svc"}),
+			expectedMatch: false,
+			expectedError: "sub claim not found in token claims",
+		},
+		{
+			name:          "invalid token format",
+			token:         "invalid-token",
+			expectedMatch: false,
+			expectedError: "invalid JWT token format",
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			match, err := CheckUserInToken(namespace, name, c.token)
+
+			assert.Equal(t, c.expectedMatch, match)
+			if len(c.expectedError) == 0 {
+				assert.NoError(t, err)
+			} else {
+				assert.EqualError(t, err, c.expectedError)
+			}
+		})
+	}
+}
+
 // FakeTokenConfig configuration for generating test tokens
 type FakeTokenConfig struct {
 	Namespace      string
@@ -622,11 +668,6 @@ func DefaultFakeTokenConfig(namespace, saName string) *FakeTokenConfig {
 
 // newFakeToken generates a JWT token with fake claims
 func newFakeToken(namespace, name string) string {
-	header := map[string]interface{}{
-		"alg": "HS256",
-		"typ": "JWT",
-	}
-
 	payload := map[string]interface{}{
 		"sub": serviceaccount.MakeUsername(namespace, name),
 		"iat": int64(1600000000), // Fixed timestamp for deterministic tests
@@ -640,6 +681,15 @@ func newFakeToken(namespace, name string) string {
 				"uid":  "fake-uid-1234",
 			},
 		},
+	}
+
+	return newFakeTokenWithClaims(payload)
+}
+
+func newFakeTokenWithClaims(payload map[string]interface{}) string {
+	header := map[string]interface{}{
+		"alg": "HS256",
+		"typ": "JWT",
 	}
 
 	// Encode header and payload
