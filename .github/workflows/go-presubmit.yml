@@ -39,12 +39,14 @@ jobs:
       - name: images-main
         run: make images
       - name: save image artifact
-        run: docker save quay.io/open-cluster-management/managed-serviceaccount:latest -o /tmp/managed-serviceaccount.tar
+        run: docker save quay.io/open-cluster-management/managed-serviceaccount:latest -o "${{ runner.temp }}/managed-serviceaccount.tar"
       - name: upload image artifact
         uses: actions/upload-artifact@v4
         with:
           name: main-image
-          path: /tmp/managed-serviceaccount.tar
+          path: ${{ runner.temp }}/managed-serviceaccount.tar
+          if-no-files-found: error
+          compression-level: 0
           retention-days: 1
 
   images-cp-creds:
@@ -106,9 +108,9 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: main-image
-          path: /tmp
+          path: ${{ runner.temp }}
       - name: load main image
-        run: docker load -i /tmp/managed-serviceaccount.tar
+        run: docker load -i "${{ runner.temp }}/managed-serviceaccount.tar"
       - name: Install clusteradm
         run: curl -L https://raw.githubusercontent.com/open-cluster-management-io/clusteradm/main/install.sh | bash
       - name: Create k8s Kind Cluster
@@ -149,9 +151,9 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: main-image
-          path: /tmp
+          path: ${{ runner.temp }}
       - name: load main image
-        run: docker load -i /tmp/managed-serviceaccount.tar
+        run: docker load -i "${{ runner.temp }}/managed-serviceaccount.tar"
       - name: Install clusteradm
         run: curl -L https://raw.githubusercontent.com/open-cluster-management-io/clusteradm/main/install.sh | bash
       - name: Create k8s Kind Cluster
