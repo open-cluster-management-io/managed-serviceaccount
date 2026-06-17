@@ -1,19 +1,18 @@
 package manager
 
 import (
-	"errors"
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	certificatesv1 "k8s.io/api/certificates/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	fakekube "k8s.io/client-go/kubernetes/fake"
-	clienttesting "k8s.io/client-go/testing"
 	"open-cluster-management.io/addon-framework/pkg/addonfactory"
 	"open-cluster-management.io/addon-framework/pkg/agent"
-	addonv1alpha1 "open-cluster-management.io/api/addon/v1alpha1"
+	addonv1beta1 "open-cluster-management.io/api/addon/v1beta1"
 	clusterv1 "open-cluster-management.io/api/cluster/v1"
 	"open-cluster-management.io/managed-serviceaccount/pkg/common"
 )
@@ -21,133 +20,135 @@ import (
 func TestNewRegistrationOption(t *testing.T) {
 	clusterName := "cluster1"
 	fakeKubeClient := fakekube.NewSimpleClientset()
+	addon := newTestAddOn(common.AddonName, clusterName)
+	addon.Status.Registrations = []addonv1beta1.RegistrationConfig{
+		newKubeClientRegistration(
+			"csr",
+			agent.DefaultUser(clusterName, common.AddonName, common.AgentName),
+			agent.DefaultGroups(clusterName, common.AddonName),
+		),
+	}
 
 	registrationOptions := NewRegistrationOption(fakeKubeClient)
 	assert.NotNil(t, registrationOptions.PermissionConfig, "permissionConfig is not specified")
 
-	err := registrationOptions.PermissionConfig(newTestCluster(clusterName), newTestAddOn("addon", clusterName))
+	err := registrationOptions.PermissionConfig(context.Background(), newTestCluster(clusterName), addon)
 	assert.NoError(t, err)
 
-	actions := fakeKubeClient.Actions()
-	assert.Len(t, actions, 2)
-	role := actions[0].(clienttesting.CreateAction).GetObject().(*rbacv1.Role)
+	role, err := fakeKubeClient.RbacV1().Roles(clusterName).Get(context.Background(), permissionName, metav1.GetOptions{})
+	assert.NoError(t, err)
 	assert.Equal(t, clusterName, role.Namespace, "invalid role ns")
-	assert.Equal(t, "managed-serviceaccount-addon-agent", role.Name, "invalid role name")
-	rolebinding := actions[1].(clienttesting.CreateAction).GetObject().(*rbacv1.RoleBinding)
+	assert.Equal(t, permissionName, role.Name, "invalid role name")
+	rolebinding := getRoleBinding(t, fakeKubeClient, clusterName)
 	assert.Equal(t, clusterName, rolebinding.Namespace, "invalid rolebinding ns")
-	assert.Equal(t, "managed-serviceaccount-addon-agent", rolebinding.Name, "invalid rolebinding name")
+	assert.Equal(t, permissionName, rolebinding.Name, "invalid rolebinding name")
 }
 
-// TestSetupPermission_tokenDriver_bindsRegistrationSubject documents GitHub issue #279: with klusterlet token
-// registration, the hub RoleBinding must use the subject published in ManagedClusterAddOn status (the
-// system:serviceaccount:... identity), not the CSR-style OCM user.
-func TestSetupPermission_tokenDriver_bindsRegistrationSubject(t *testing.T) {
+func TestSetupPermission(t *testing.T) {
 	clusterName := "cluster1"
-	addonName := common.AddonName
-	expectedSubjectUser := "system:serviceaccount:" + clusterName + ":" + addonName + "-agent"
+	tokenUser := "system:serviceaccount:" + clusterName + ":" + common.AddonName + "-agent"
+	addonGroup := "system:open-cluster-management:cluster:" + clusterName + ":addon:" + common.AddonName
+	defaultUser := agent.DefaultUser(clusterName, common.AddonName, common.AgentName)
+	defaultGroups := agent.DefaultGroups(clusterName, common.AddonName)
 
-	fakeKubeClient := fakekube.NewSimpleClientset()
-	permissionConfig := NewRegistrationOption(fakeKubeClient).PermissionConfig
-
-	addon := newTestAddOn(addonName, clusterName)
-	addon.Status.KubeClientDriver = TokenDriver
-	addon.Status.Registrations = []addonv1alpha1.RegistrationConfig{
+	cases := []struct {
+		name          string
+		registrations []addonv1beta1.RegistrationConfig
+		wantSubjects  []rbacv1.Subject
+		wantNotReady  bool
+	}{
 		{
-			SignerName: certificatesv1.KubeAPIServerClientSignerName,
-			Subject: addonv1alpha1.Subject{
-				User: expectedSubjectUser,
+			name: "token driver binds registration subject and filters system:authenticated",
+			registrations: []addonv1beta1.RegistrationConfig{
+				newKubeClientRegistration("token", tokenUser, []string{addonGroup, "system:authenticated"}),
+			},
+			wantSubjects: []rbacv1.Subject{
+				{Kind: rbacv1.UserKind, APIGroup: rbacv1.GroupName, Name: tokenUser},
+				{Kind: rbacv1.GroupKind, APIGroup: rbacv1.GroupName, Name: addonGroup},
 			},
 		},
-	}
-
-	err := permissionConfig(newTestCluster(clusterName), addon)
-	assert.NoError(t, err)
-
-	var roleBinding *rbacv1.RoleBinding
-	for _, a := range fakeKubeClient.Actions() {
-		create, ok := a.(clienttesting.CreateAction)
-		if !ok {
-			continue
-		}
-		if rb, ok := create.GetObject().(*rbacv1.RoleBinding); ok {
-			roleBinding = rb
-			break
-		}
-	}
-	assert.NotNil(t, roleBinding, "expected a RoleBinding create action")
-	if roleBinding == nil {
-		return
-	}
-	assert.Len(t, roleBinding.Subjects, 1, "expected exactly one subject on RoleBinding")
-	assert.Equal(t, rbacv1.UserKind, roleBinding.Subjects[0].Kind)
-	assert.Equal(t, expectedSubjectUser, roleBinding.Subjects[0].Name,
-		"token registration must bind the hub kube client subject user, not the CSR registration user")
-}
-
-func TestSetupPermission_csrDriver_bindsDefaultUser(t *testing.T) {
-	clusterName := "cluster1"
-	fakeKubeClient := fakekube.NewSimpleClientset()
-	addon := newTestAddOn(common.AddonName, clusterName)
-	addon.Status.KubeClientDriver = CSRDriver
-
-	err := NewRegistrationOption(fakeKubeClient).PermissionConfig(newTestCluster(clusterName), addon)
-	assert.NoError(t, err)
-
-	var roleBinding *rbacv1.RoleBinding
-	for _, a := range fakeKubeClient.Actions() {
-		if c, ok := a.(clienttesting.CreateAction); ok {
-			if rb, ok := c.GetObject().(*rbacv1.RoleBinding); ok {
-				roleBinding = rb
-			}
-		}
-	}
-	assert.NotNil(t, roleBinding)
-	assert.Equal(t, agent.DefaultUser(clusterName, common.AddonName, common.AgentName), roleBinding.Subjects[0].Name)
-}
-
-// TestSetupPermission_tokenDriver_subjectNotReady verifies we wait until the spoke has published
-// registration subject before applying hub RBAC.
-func TestSetupPermission_tokenDriver_subjectNotReady(t *testing.T) {
-	clusterName := "cluster1"
-	addonName := common.AddonName
-
-	t.Run("no kube client registration entry", func(t *testing.T) {
-		fakeKubeClient := fakekube.NewSimpleClientset()
-		permissionConfig := NewRegistrationOption(fakeKubeClient).PermissionConfig
-		addon := newTestAddOn(addonName, clusterName)
-		addon.Status.KubeClientDriver = TokenDriver
-
-		err := permissionConfig(newTestCluster(clusterName), addon)
-		var subjectErr *agent.SubjectNotReadyError
-		assert.True(t, errors.As(err, &subjectErr), "expected SubjectNotReadyError while token subject is unset, got %v", err)
-		assertNoCreateActions(t, fakeKubeClient.Actions())
-	})
-
-	t.Run("kube client registration with empty subject", func(t *testing.T) {
-		fakeKubeClient := fakekube.NewSimpleClientset()
-		permissionConfig := NewRegistrationOption(fakeKubeClient).PermissionConfig
-		addon := newTestAddOn(addonName, clusterName)
-		addon.Status.KubeClientDriver = TokenDriver
-		addon.Status.Registrations = []addonv1alpha1.RegistrationConfig{
-			{
-				SignerName: certificatesv1.KubeAPIServerClientSignerName,
-				Subject:    addonv1alpha1.Subject{},
+		{
+			name: "csr driver binds registration subject",
+			registrations: []addonv1beta1.RegistrationConfig{
+				newKubeClientRegistration("csr", defaultUser, defaultGroups),
 			},
-		}
+			wantSubjects: newRBACSubjects(defaultUser, defaultGroups),
+		},
+		{
+			name: "empty driver binds registration subject",
+			registrations: []addonv1beta1.RegistrationConfig{
+				newKubeClientRegistration("", defaultUser, defaultGroups),
+			},
+			wantSubjects: newRBACSubjects(defaultUser, defaultGroups),
+		},
+		{
+			name: "empty registration subject is not ready",
+			registrations: []addonv1beta1.RegistrationConfig{
+				newKubeClientRegistration("token", "", nil),
+			},
+			wantNotReady: true,
+		},
+		{
+			name:         "missing registration subject is not ready",
+			wantNotReady: true,
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			fakeKubeClient := fakekube.NewSimpleClientset()
+			addon := newTestAddOn(common.AddonName, clusterName)
+			addon.Status.Registrations = c.registrations
 
-		err := permissionConfig(newTestCluster(clusterName), addon)
-		var subjectErr *agent.SubjectNotReadyError
-		assert.True(t, errors.As(err, &subjectErr), "expected SubjectNotReadyError for empty registration subject, got %v", err)
-		assertNoCreateActions(t, fakeKubeClient.Actions())
-	})
+			err := NewRegistrationOption(fakeKubeClient).PermissionConfig(context.Background(), newTestCluster(clusterName), addon)
+			if c.wantNotReady {
+				var subjectErr *agent.SubjectNotReadyError
+				assert.ErrorAs(t, err, &subjectErr)
+				_, roleErr := fakeKubeClient.RbacV1().Roles(clusterName).Get(context.Background(), permissionName, metav1.GetOptions{})
+				assert.NoError(t, roleErr)
+				_, roleBindingErr := fakeKubeClient.RbacV1().RoleBindings(clusterName).Get(context.Background(), permissionName, metav1.GetOptions{})
+				assert.True(t, apierrors.IsNotFound(roleBindingErr), "expected rolebinding not found, got %v", roleBindingErr)
+				return
+			}
+			assert.NoError(t, err)
+			roleBinding := getRoleBinding(t, fakeKubeClient, clusterName)
+			assert.Equal(t, c.wantSubjects, roleBinding.Subjects)
+		})
+	}
 }
 
-func assertNoCreateActions(t *testing.T, actions []clienttesting.Action) {
+func newRBACSubjects(user string, groups []string) []rbacv1.Subject {
+	subjects := []rbacv1.Subject{
+		{Kind: rbacv1.UserKind, APIGroup: rbacv1.GroupName, Name: user},
+	}
+	for _, group := range groups {
+		subjects = append(subjects, rbacv1.Subject{
+			Kind:     rbacv1.GroupKind,
+			APIGroup: rbacv1.GroupName,
+			Name:     group,
+		})
+	}
+	return subjects
+}
+
+func getRoleBinding(t *testing.T, client *fakekube.Clientset, namespace string) *rbacv1.RoleBinding {
 	t.Helper()
-	for _, a := range actions {
-		if _, ok := a.(clienttesting.CreateAction); ok {
-			t.Fatalf("expected no CreateAction writes, saw %#v", a)
-		}
+	roleBinding, err := client.RbacV1().RoleBindings(namespace).Get(context.Background(), permissionName, metav1.GetOptions{})
+	assert.NoError(t, err)
+	return roleBinding
+}
+
+func newKubeClientRegistration(driver, user string, groups []string) addonv1beta1.RegistrationConfig {
+	return addonv1beta1.RegistrationConfig{
+		Type: addonv1beta1.KubeClient,
+		KubeClient: &addonv1beta1.KubeClientConfig{
+			Driver: driver,
+			Subject: addonv1beta1.KubeClientSubject{
+				BaseSubject: addonv1beta1.BaseSubject{
+					User:   user,
+					Groups: groups,
+				},
+			},
+		},
 	}
 }
 
@@ -189,7 +190,7 @@ func TestManifestAddonAgent(t *testing.T) {
 			addOnAgent, err := agentFactory.BuildTemplateAgentAddon()
 			assert.NoError(t, err)
 
-			manifests, err := addOnAgent.Manifests(newTestCluster(clusterName), newTestAddOn(addonName, clusterName))
+			manifests, err := addOnAgent.Manifests(context.Background(), newTestCluster(clusterName), newTestAddOn(addonName, clusterName))
 			assert.NoError(t, err)
 
 			actual := []string{}
@@ -226,14 +227,12 @@ func newTestCluster(name string) *clusterv1.ManagedCluster {
 	}
 }
 
-func newTestAddOn(name, namespace string) *addonv1alpha1.ManagedClusterAddOn {
-	return &addonv1alpha1.ManagedClusterAddOn{
+func newTestAddOn(name, namespace string) *addonv1beta1.ManagedClusterAddOn {
+	return &addonv1beta1.ManagedClusterAddOn{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: namespace,
-		},
-		Spec: addonv1alpha1.ManagedClusterAddOnSpec{
-			InstallNamespace: name,
+			Name:        name,
+			Namespace:   namespace,
+			Annotations: map[string]string{addonv1beta1.InstallNamespaceAnnotation: name},
 		},
 	}
 }
