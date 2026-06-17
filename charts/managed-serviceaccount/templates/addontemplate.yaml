@@ -56,6 +56,10 @@ spec:
               labels:
                 addon-agent: managed-serviceaccount
             spec:
+              securityContext:
+                runAsNonRoot: true
+                seccompProfile:
+                  type: RuntimeDefault
               containers:
               - args:
                 {{- if gt (int .Values.replicas) 1 }}
@@ -69,6 +73,12 @@ spec:
                 - agent
                 image: {{ .Values.image }}:{{ .Values.tag | default (print "v" .Chart.Version) }}
                 imagePullPolicy: IfNotPresent
+                securityContext:
+                  allowPrivilegeEscalation: false
+                  readOnlyRootFilesystem: true
+                  capabilities:
+                    drop:
+                    - ALL
                 livenessProbe:
                   httpGet:
                     path: /healthz

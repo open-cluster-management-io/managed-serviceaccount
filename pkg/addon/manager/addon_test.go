@@ -5,11 +5,13 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	fakekube "k8s.io/client-go/kubernetes/fake"
+	"k8s.io/utils/ptr"
 	"open-cluster-management.io/addon-framework/pkg/addonfactory"
 	"open-cluster-management.io/addon-framework/pkg/agent"
 	addonv1beta1 "open-cluster-management.io/api/addon/v1beta1"
@@ -194,6 +196,7 @@ func TestManifestAddonAgent(t *testing.T) {
 			assert.NoError(t, err)
 
 			actual := []string{}
+			var agentDeployment *appsv1.Deployment
 			for _, manifest := range manifests {
 				obj, ok := manifest.(metav1.ObjectMetaAccessor)
 				assert.True(t, ok, "invalid manifest")
@@ -201,10 +204,35 @@ func TestManifestAddonAgent(t *testing.T) {
 					assert.Equalf(t, addonName, ns, "unexpected ns of manifest %q", obj.GetObjectMeta().GetName())
 				}
 				actual = append(actual, obj.GetObjectMeta().GetName())
+				if deployment, ok := manifest.(*appsv1.Deployment); ok {
+					agentDeployment = deployment
+				}
 			}
 			assert.ElementsMatch(t, c.expectedManifestNames, actual)
+			if assert.NotNil(t, agentDeployment, "expected addon agent Deployment manifest") {
+				assertAgentSecurityContext(t, agentDeployment)
+			}
 		})
 	}
+}
+
+func assertAgentSecurityContext(t *testing.T, deployment *appsv1.Deployment) {
+	t.Helper()
+
+	podSpec := deployment.Spec.Template.Spec
+	assert.Equal(t, &corev1.PodSecurityContext{
+		RunAsNonRoot:   ptr.To(true),
+		SeccompProfile: &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault},
+	}, podSpec.SecurityContext)
+
+	if !assert.Len(t, podSpec.Containers, 1, "expected one addon agent container") {
+		return
+	}
+	assert.Equal(t, &corev1.SecurityContext{
+		AllowPrivilegeEscalation: ptr.To(false),
+		ReadOnlyRootFilesystem:   ptr.To(true),
+		Capabilities:             &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}},
+	}, podSpec.Containers[0].SecurityContext)
 }
 
 func newTestImagePullSecret() *corev1.Secret {

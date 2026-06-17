@@ -43,10 +43,20 @@ spec:
                     addon-agent: managed-serviceaccount
                 spec:
                   serviceAccount: managed-serviceaccount
+                  securityContext:
+                    runAsNonRoot: true
+                    seccompProfile:
+                      type: RuntimeDefault
                   containers:
                     - name: addon-agent
                       image: quay.io/open-cluster-management/managed-serviceaccount:latest
                       imagePullPolicy: IfNotPresent
+                      securityContext:
+                        allowPrivilegeEscalation: false
+                        readOnlyRootFilesystem: true
+                        capabilities:
+                          drop:
+                            - ALL
                       command:
                         - /agent
                       args:
