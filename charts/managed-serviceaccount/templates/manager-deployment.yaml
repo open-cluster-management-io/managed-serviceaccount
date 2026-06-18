@@ -1,4 +1,4 @@
-{{- if or (ne .Values.hubDeployMode "AddOnTemplate") .Values.featureGates.clusterProfile }}
+{{- if include "managed-serviceaccount.hubManager.enabled" . }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -37,11 +37,16 @@ spec:
             - --leader-elect=true
             {{- end }}
             - --deploy-mode={{ .Values.hubDeployMode }}
+            - --metrics-bind-address=:38080
             - --agent-image-name={{ .Values.image }}:{{ .Values.tag | default (print "v" .Chart.Version) }}
             {{- if .Values.featureGates }}
             - --feature-gates=EphemeralIdentity={{ .Values.featureGates.ephemeralIdentity | default false}},ClusterProfile={{ .Values.featureGates.clusterProfile | default false}}
-            {{- end}}
+            {{- end }}
             {{- if .Values.agentImagePullSecret }}
             - --agent-image-pull-secret={{ .Values.agentImagePullSecret }}
-            {{- end}}
+            {{- end }}
+          ports:
+            - name: metrics
+              containerPort: 38080
+              protocol: TCP
 {{- end }}
