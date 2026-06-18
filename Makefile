@@ -4,6 +4,7 @@ IMAGE_TAG ?= latest
 # Produce CRDs that work back to Kubernetes 1.11 (no version conversion)
 CRD_OPTIONS ?= "crd:crdVersions={v1},allowDangerousTypes=true,generateEmbeddedObjectMeta=true"
 E2E_TEST_CLUSTER_NAME ?= loopback
+HELM ?= helm
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
@@ -69,6 +70,24 @@ envtest-setup:
 
 test: manifests generate fmt vet envtest-setup ## Run tests.
 	go test ./pkg/... -coverprofile cover.out
+
+.PHONY: test-helm
+test-helm: ## Lint and render Helm chart.
+	$(HELM) lint charts/managed-serviceaccount
+	$(HELM) template managed-serviceaccount charts/managed-serviceaccount \
+		--namespace open-cluster-management-addon >/dev/null
+	$(HELM) template managed-serviceaccount charts/managed-serviceaccount \
+		--namespace open-cluster-management-addon \
+		--set featureGates.ephemeralIdentity=true \
+		--set featureGates.clusterProfile=true >/dev/null
+	$(HELM) template managed-serviceaccount charts/managed-serviceaccount \
+		--namespace open-cluster-management-addon \
+		--set hubDeployMode=AddOnTemplate >/dev/null
+	$(HELM) template managed-serviceaccount charts/managed-serviceaccount \
+		--namespace open-cluster-management-addon \
+		--set hubDeployMode=AddOnTemplate \
+		--set featureGates.ephemeralIdentity=true \
+		--set featureGates.clusterProfile=true >/dev/null
 
 ##@ Build
 
