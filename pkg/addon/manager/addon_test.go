@@ -162,6 +162,7 @@ func TestManifestAddonAgent(t *testing.T) {
 	clusterName := "cluster1"
 	addonName := "addon1"
 	imageName := "imageName1"
+	hubKubeconfigSecretName := "hub-kubeconfig-secret"
 	manifestNames := []string{
 		addonName,
 		"managed-serviceaccount",
@@ -177,25 +178,46 @@ func TestManifestAddonAgent(t *testing.T) {
 		name                  string
 		getValuesFunc         []addonfactory.GetValuesFunc
 		expectedManifestNames []string
+		expectedImage         string
+		expectedNodeSelector  map[string]string
+		expectedTolerations   []corev1.Toleration
 	}{
 		{
 			name:                  "install",
 			getValuesFunc:         []addonfactory.GetValuesFunc{GetDefaultValues(imageName, nil)},
 			expectedManifestNames: manifestNames,
+			expectedImage:         imageName,
 		},
 		{
 			name:                  "install all with image pull secret",
 			getValuesFunc:         []addonfactory.GetValuesFunc{GetDefaultValues(imageName, newTestImagePullSecret())},
 			expectedManifestNames: append(manifestNames, "open-cluster-management-image-pull-credentials"),
+			expectedImage:         imageName,
+		},
+		{
+			name: "node placement is rendered on the agent deployment",
+			getValuesFunc: []addonfactory.GetValuesFunc{
+				GetDefaultValues(imageName, nil),
+				getNodePlacementValues(
+					map[string]string{"kubernetes.io/os": "linux"},
+					[]corev1.Toleration{{Key: "foo", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoExecute}},
+				),
+			},
+			expectedManifestNames: manifestNames,
+			expectedImage:         imageName,
+			expectedNodeSelector:  map[string]string{"kubernetes.io/os": "linux"},
+			expectedTolerations:   []corev1.Toleration{{Key: "foo", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoExecute}},
 		},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
+			getValuesFuncs := append([]addonfactory.GetValuesFunc{}, c.getValuesFunc...)
+			getValuesFuncs = append(getValuesFuncs, getHubKubeconfigSecretValues(hubKubeconfigSecretName))
 			manifests := renderTestManifests(
 				t,
 				newTestCluster(clusterName),
 				newTestAddOn(addonName, clusterName),
-				c.getValuesFunc...,
+				getValuesFuncs...,
 			)
 
 			actual := []string{}
@@ -214,7 +236,64 @@ func TestManifestAddonAgent(t *testing.T) {
 			assert.ElementsMatch(t, c.expectedManifestNames, actual)
 			if assert.NotNil(t, agentDeployment, "expected addon agent Deployment manifest") {
 				assertAgentSecurityContext(t, agentDeployment)
+				if !assert.NotEmpty(t, agentDeployment.Spec.Template.Spec.Containers, "expected at least one container") {
+					return
+				}
+				container := agentDeployment.Spec.Template.Spec.Containers[0]
+				assert.Equal(t, c.expectedImage, container.Image)
+				assert.Contains(t, container.Args, "--cluster-name="+clusterName)
+				assert.Equal(t, c.expectedNodeSelector, agentDeployment.Spec.Template.Spec.NodeSelector)
+				assert.Equal(t, c.expectedTolerations, agentDeployment.Spec.Template.Spec.Tolerations)
+				assertHubKubeconfigSecret(t, agentDeployment, hubKubeconfigSecretName)
 			}
+		})
+	}
+}
+
+func getHubKubeconfigSecretValues(secretName string) addonfactory.GetValuesFunc {
+	return func(_ *clusterv1.ManagedCluster, _ *addonv1beta1.ManagedClusterAddOn) (addonfactory.Values, error) {
+		return addonfactory.Values{"hubKubeConfigSecret": secretName}, nil
+	}
+}
+
+func getNodePlacementValues(nodeSelector map[string]string, tolerations []corev1.Toleration) addonfactory.GetValuesFunc {
+	return func(_ *clusterv1.ManagedCluster, _ *addonv1beta1.ManagedClusterAddOn) (addonfactory.Values, error) {
+		return addonfactory.ToAddOnDeploymentConfigValues(addonv1beta1.AddOnDeploymentConfig{
+			Spec: addonv1beta1.AddOnDeploymentConfigSpec{
+				NodePlacement: &addonv1beta1.NodePlacement{
+					NodeSelector: nodeSelector,
+					Tolerations:  tolerations,
+				},
+			},
+		})
+	}
+}
+
+func TestGetDefaultValuesRequiresDockerConfigJsonKey(t *testing.T) {
+	cases := []struct {
+		name string
+		data map[string][]byte
+	}{
+		{
+			name: "missing docker config key",
+			data: map[string][]byte{},
+		},
+		{
+			name: "empty docker config",
+			data: map[string][]byte{
+				corev1.DockerConfigJsonKey: {},
+			},
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			imagePullSecret := newTestImagePullSecret()
+			imagePullSecret.Data = c.data
+
+			values, err := GetDefaultValues("imageName1", imagePullSecret)(newTestCluster("cluster1"), newTestAddOn(common.AddonName, "cluster1"))
+
+			assert.Nil(t, values)
+			assert.ErrorContains(t, err, `missing ".dockerconfigjson"`)
 		})
 	}
 }
@@ -236,6 +315,23 @@ func assertAgentSecurityContext(t *testing.T, deployment *appsv1.Deployment) {
 		ReadOnlyRootFilesystem:   ptr.To(true),
 		Capabilities:             &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}},
 	}, podSpec.Containers[0].SecurityContext)
+}
+
+func assertHubKubeconfigSecret(t *testing.T, deployment *appsv1.Deployment, expectedSecretName string) {
+	t.Helper()
+
+	var hubKubeconfigVolume *corev1.Volume
+	for i := range deployment.Spec.Template.Spec.Volumes {
+		if deployment.Spec.Template.Spec.Volumes[i].Name == "hub-kubeconfig" {
+			hubKubeconfigVolume = &deployment.Spec.Template.Spec.Volumes[i]
+			break
+		}
+	}
+
+	if assert.NotNil(t, hubKubeconfigVolume, "expected hub kubeconfig volume") &&
+		assert.NotNil(t, hubKubeconfigVolume.Secret, "expected hub kubeconfig volume to use a secret") {
+		assert.Equal(t, expectedSecretName, hubKubeconfigVolume.Secret.SecretName)
+	}
 }
 
 func TestManifestAddonServiceMonitor(t *testing.T) {
@@ -326,11 +422,11 @@ func renderTestManifests(
 ) []runtime.Object {
 	t.Helper()
 
-	agentFactory := addonfactory.NewAgentAddonFactory(common.AddonName, FS, "manifests/templates").
+	agentFactory := addonfactory.NewAgentAddonFactory(common.AddonName, FS, "manifests/charts/managed-serviceaccount-agent").
 		WithScheme(NewAgentScheme()).
 		WithGetValuesFuncs(getValuesFuncs...)
 
-	addOnAgent, err := agentFactory.BuildTemplateAgentAddon()
+	addOnAgent, err := agentFactory.BuildHelmAgentAddon()
 	assert.NoError(t, err)
 
 	manifests, err := addOnAgent.Manifests(context.Background(), cluster, addon)

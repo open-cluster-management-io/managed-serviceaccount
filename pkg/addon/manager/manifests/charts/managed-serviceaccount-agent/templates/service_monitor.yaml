@@ -1,10 +1,10 @@
-{{- if .Prometheus.Enabled }}
+{{- if .Values.Prometheus.Enabled }}
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
   name: managed-serviceaccount-addon-agent
-  namespace: {{ .AddonInstallNamespace }}
-{{- with .Prometheus.ServiceMonitor.Labels }}
+  namespace: {{ .Values.addonInstallNamespace }}
+{{- with .Values.Prometheus.ServiceMonitor.Labels }}
   labels:
 {{- range $key, $value := . }}
     {{ printf "%q" $key }}: {{ printf "%q" $value }}

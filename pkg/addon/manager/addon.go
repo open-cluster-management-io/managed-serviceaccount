@@ -27,7 +27,7 @@ import (
 
 const permissionName = "managed-serviceaccount-addon-agent"
 
-//go:embed manifests/templates
+//go:embed all:manifests
 var FS embed.FS
 
 const (
@@ -58,21 +58,25 @@ func NewAgentScheme() *runtime.Scheme {
 }
 
 func GetDefaultValues(image string, imagePullSecret *corev1.Secret) addonfactory.GetValuesFunc {
-	return func(cluster *clusterv1.ManagedCluster, addon *addonv1beta1.ManagedClusterAddOn) (addonfactory.Values, error) {
-		manifestConfig := struct {
-			ClusterName         string
-			Image               string
-			ImagePullSecretData string
-		}{
-			ClusterName: cluster.Name,
-			Image:       image,
+	return func(_ *clusterv1.ManagedCluster, _ *addonv1beta1.ManagedClusterAddOn) (addonfactory.Values, error) {
+		values := addonfactory.Values{
+			"Image": image,
 		}
 
 		if imagePullSecret != nil {
-			manifestConfig.ImagePullSecretData = base64.StdEncoding.EncodeToString(imagePullSecret.Data[corev1.DockerConfigJsonKey])
+			dockerConfig, ok := imagePullSecret.Data[corev1.DockerConfigJsonKey]
+			if !ok || len(dockerConfig) == 0 {
+				return nil, fmt.Errorf(
+					"image pull secret %s/%s missing %q",
+					imagePullSecret.Namespace,
+					imagePullSecret.Name,
+					corev1.DockerConfigJsonKey,
+				)
+			}
+			values["imagePullSecretData"] = base64.StdEncoding.EncodeToString(dockerConfig)
 		}
 
-		return addonfactory.StructToValues(manifestConfig), nil
+		return values, nil
 	}
 }
 

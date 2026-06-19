@@ -1,12 +1,13 @@
-kind: ClusterRoleBinding
+kind: RoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
   name: open-cluster-management:managed-serviceaccount:addon-agent
+  namespace: {{ .Values.addonInstallNamespace }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
+  kind: Role
   name: open-cluster-management:managed-serviceaccount:addon-agent
 subjects:
   - kind: ServiceAccount
     name: managed-serviceaccount
-    namespace: {{ .AddonInstallNamespace }}
+    namespace: {{ .Values.addonInstallNamespace }}

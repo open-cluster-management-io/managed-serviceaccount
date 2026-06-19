@@ -211,7 +211,7 @@ func (o *HubManagerOptions) Run() error {
 			}
 		}
 
-		agentFactory := addonfactory.NewAgentAddonFactory(common.AddonName, manager.FS, "manifests/templates").
+		agentFactory := addonfactory.NewAgentAddonFactory(common.AddonName, manager.FS, "manifests/charts/managed-serviceaccount-agent").
 			WithScheme(manager.NewAgentScheme()).
 			WithConfigGVRs(utils.AddOnDeploymentConfigGVR).
 			WithGetValuesFuncs(
@@ -230,7 +230,7 @@ func (o *HubManagerOptions) Run() error {
 			WithAgentRegistrationOption(manager.NewRegistrationOption(nativeClient)).
 			WithAgentDeployTriggerClusterFilter(utils.ClusterImageRegistriesAnnotationChanged)
 
-		agentAddOn, err := agentFactory.BuildTemplateAgentAddon()
+		agentAddOn, err := agentFactory.BuildHelmAgentAddon()
 		if err != nil {
 			setupLog.Error(err, "failed to build agent")
 			os.Exit(1)

@@ -1,0 +1,14 @@
+Image: quay.io/open-cluster-management/managed-serviceaccount:latest
+imagePullSecretData: ""
+
+# The following values are injected by the addon-framework at render time.
+clusterName: null
+addonInstallNamespace: null
+hubKubeConfigSecret: null
+NodeSelector: {}
+Tolerations: []
+
+Prometheus:
+  Enabled: false
+  ServiceMonitor:
+    Labels: {}
