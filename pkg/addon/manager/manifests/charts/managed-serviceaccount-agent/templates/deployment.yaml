@@ -1,3 +1,4 @@
+{{- $image := include "managed-serviceaccount-common.agentImage" . }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -26,7 +27,7 @@ spec:
 {{- end }}
       containers:
         - name: addon-agent
-          image: {{ .Values.Image }}
+          image: {{ $image }}
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false

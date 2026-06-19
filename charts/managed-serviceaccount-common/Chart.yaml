@@ -1,0 +1,6 @@
+apiVersion: v2
+name: managed-serviceaccount-common
+description: A library Helm chart for Managed ServiceAccount shared helpers
+type: library
+version: 0.1.0
+appVersion: 0.1.0

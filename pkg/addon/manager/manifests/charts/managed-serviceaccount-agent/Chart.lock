@@ -1,0 +1,6 @@
+dependencies:
+- name: managed-serviceaccount-common
+  repository: file://../../../../../../charts/managed-serviceaccount-common
+  version: 0.1.0
+digest: sha256:bcc2daa6f3cf8d90bcdef36d429052ccf16188884126966124d9a8da6cf4c92d
+generated: "2026-06-19T15:03:43.6832499+09:00"

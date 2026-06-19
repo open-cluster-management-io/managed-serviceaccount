@@ -1,10 +1,15 @@
-Image: quay.io/open-cluster-management/managed-serviceaccount:latest
+# Image is injected by the addon manager; image/tag are the standalone-render
+# fallback consumed by the managed-serviceaccount-common.image helper.
+Image:
+image: quay.io/open-cluster-management/managed-serviceaccount
+tag:
+
 imagePullSecretData: ""
 
 # The following values are injected by the addon-framework at render time.
-clusterName: null
-addonInstallNamespace: null
-hubKubeConfigSecret: null
+clusterName: local-cluster
+addonInstallNamespace: open-cluster-management-agent-addon
+hubKubeConfigSecret: managed-serviceaccount-hub-kubeconfig
 NodeSelector: {}
 Tolerations: []
 
