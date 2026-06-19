@@ -42,7 +42,7 @@ var _ = Describe("Addon Installation Test", Label("install"),
 			waitManagedClusterAddonAvailable(f)
 		})
 
-		It("Addon should be configurable with AddOnDeploymentConfig", func() {
+		It("Addon can be configured with AddOnDeploymentConfig", func() {
 			deployConfigName := "tolerations-deploy-config"
 			nodeSelector := map[string]string{"kubernetes.io/os": "linux"}
 			tolerations := []corev1.Toleration{{Key: "node-role.kubernetes.io/infra", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoSchedule}}
@@ -127,7 +127,7 @@ var _ = Describe("Addon Installation Test", Label("install"),
 				return expectAgentPlacement(deploy, nodeSelector, tolerations)
 			})
 
-			By("Ensure the managed-serviceaccountis available")
+			By("Ensure the managed-serviceaccount is available")
 			waitManagedClusterAddonAvailable(f)
 		})
 
