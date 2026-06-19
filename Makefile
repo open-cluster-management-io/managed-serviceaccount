@@ -68,11 +68,20 @@ envtest-setup:
 	$(eval export KUBEBUILDER_ASSETS=$(shell curl -fsSL $(ENSURE_ENVTEST_SCRIPT) | bash))
 	@echo "KUBEBUILDER_ASSETS=$(KUBEBUILDER_ASSETS)"
 
+.PHONY: sync-helm-dependencies
+sync-helm-dependencies: ## Sync local Helm chart dependencies into charts/ directories.
+	./hack/sync-helm-dependencies.sh
+
+.PHONY: verify-helm-dependencies
+verify-helm-dependencies: ## Verify Helm chart dependencies are committed and current.
+	./hack/verify-helm-dependencies.sh
+
+.PHONY: test
 test: manifests generate fmt vet envtest-setup ## Run tests.
 	go test ./pkg/... -coverprofile cover.out
 
 .PHONY: test-helm
-test-helm: ## Lint and render Helm chart.
+test-helm: verify-helm-dependencies ## Lint and render Helm charts.
 	$(HELM) lint charts/managed-serviceaccount
 	$(HELM) template managed-serviceaccount charts/managed-serviceaccount \
 		--namespace open-cluster-management-addon >/dev/null
@@ -88,6 +97,13 @@ test-helm: ## Lint and render Helm chart.
 		--set hubDeployMode=AddOnTemplate \
 		--set featureGates.ephemeralIdentity=true \
 		--set featureGates.clusterProfile=true >/dev/null
+	$(HELM) lint pkg/addon/manager/manifests/charts/managed-serviceaccount-agent
+	$(HELM) template managed-serviceaccount-agent pkg/addon/manager/manifests/charts/managed-serviceaccount-agent \
+		--namespace open-cluster-management-agent-addon >/dev/null
+	$(HELM) template managed-serviceaccount-agent pkg/addon/manager/manifests/charts/managed-serviceaccount-agent \
+		--namespace open-cluster-management-agent-addon \
+		--set Prometheus.Enabled=true \
+		--set imagePullSecretData=dGVzdA== >/dev/null
 
 ##@ Build
 
