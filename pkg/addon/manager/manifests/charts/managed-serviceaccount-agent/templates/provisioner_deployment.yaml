@@ -1,0 +1,70 @@
+{{- if eq .Values.installMode "Hosted" }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "managed-serviceaccount-agent.provisionerName" . }}
+  namespace: {{ .Values.addonInstallNamespace }}
+  labels:
+    addon-agent: {{ include "managed-serviceaccount-agent.provisionerName" . }}
+  annotations:
+    addon.open-cluster-management.io/hosted-manifest-location: hosting
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      addon-agent: {{ include "managed-serviceaccount-agent.provisionerName" . }}
+  template:
+    metadata:
+      labels:
+        addon-agent: {{ include "managed-serviceaccount-agent.provisionerName" . }}
+    spec:
+      serviceAccountName: {{ include "managed-serviceaccount-agent.provisionerName" . }}
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+{{- if .Values.NodeSelector }}
+      nodeSelector: {{ toYaml .Values.NodeSelector | nindent 8 }}
+{{- end }}
+{{- if .Values.Tolerations }}
+      tolerations: {{ toYaml .Values.Tolerations | nindent 8 }}
+{{- end }}
+      containers:
+        - name: kubeconfig-provisioner
+          image: {{ include "managed-serviceaccount-common.agentImage" . }}
+          imagePullPolicy: IfNotPresent
+          {{- $containerID := printf "deployments:%s:%s" (include "managed-serviceaccount-agent.provisionerName" .) "kubeconfig-provisioner" }}
+          {{- range $item := reverse .Values.ResourceRequirements }}
+            {{- if regexMatch $item.ContainerIDRegex $containerID }}
+          resources:
+              {{- toYaml $item.Resources | nindent 12 }}
+              {{- break }}
+            {{- end }}
+          {{- end }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+              - ALL
+          command:
+            - /msa
+            - managed-kubeconfig-provisioner
+          # Quote every argument so a customized-variable value can never smuggle
+          # additional arguments into this container.
+          args:
+            - {{ printf "--source-namespace=%v" (include "managed-serviceaccount-agent.externalManagedKubeConfigNamespace" .) | quote }}
+            - {{ printf "--source-secret=%v" .Values.externalManagedKubeConfigSecret | quote }}
+            - {{ printf "--target-namespace=%v" .Values.addonInstallNamespace | quote }}
+            - {{ printf "--target-secret=%v" .Values.managedKubeConfigSecret | quote }}
+            - {{ printf "--managed-serviceaccount-namespace=%v" .Values.addonInstallNamespace | quote }}
+            - {{ printf "--managed-serviceaccount-name=%v" .Values.managedServiceAccountName | quote }}
+            - {{ printf "--hosting-service-account-name=%v" (include "managed-serviceaccount-agent.provisionerName" .) | quote }}
+            - {{ printf "--token-expiration-seconds=%v" .Values.managedKubeConfigTokenExpirationSeconds | quote }}
+            - {{ printf "--refresh-before=%v" .Values.managedKubeConfigRefreshBefore | quote }}
+            - {{ printf "--sync-interval=%v" .Values.managedKubeConfigProvisionerSyncInterval | quote }}
+{{- if .Values.imagePullSecretData }}
+      imagePullSecrets:
+      - name: open-cluster-management-image-pull-credentials
+{{- end }}
+{{- end }}

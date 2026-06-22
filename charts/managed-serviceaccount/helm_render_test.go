@@ -3,9 +3,11 @@ package managedserviceaccount_test
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"io"
 	"os"
 	"os/exec"
+	"slices"
 	"testing"
 	"time"
 
@@ -51,6 +53,31 @@ func TestTargetClusterManagedClusterAddOnRendersConfig(t *testing.T) {
 	assertAddOnDeploymentConfigRef(t, configs[0], "loopback")
 }
 
+// Pinned at the verb level because losing this verb only surfaces as a slow
+// e2e cleanup failure; other rules are covered by structural render checks.
+func TestDeploymentModeManagerCanDeleteManifestWorks(t *testing.T) {
+	objects := renderChart(t)
+	role := findObject(t, objects, "ClusterRole", "", "open-cluster-management:managed-serviceaccount:addon-manager")
+
+	for _, rawRule := range mustNestedSlice(t, role.Object, "rules") {
+		rule, ok := rawRule.(map[string]interface{})
+		if !ok {
+			t.Fatalf("unexpected policy rule type %T", rawRule)
+		}
+		apiGroups := mustNestedStringSlice(t, rule, "apiGroups")
+		resources := mustNestedStringSlice(t, rule, "resources")
+		verbs := mustNestedStringSlice(t, rule, "verbs")
+		if slices.Contains(apiGroups, "work.open-cluster-management.io") &&
+			slices.Contains(resources, "manifestworks") {
+			if !slices.Contains(verbs, "delete") {
+				t.Fatalf("manifestwork policy rule must include delete: %v", verbs)
+			}
+			return
+		}
+	}
+	t.Fatal("manifestwork policy rule not found")
+}
+
 func TestAddOnTemplateModeRendersTemplateAndOmitsHubManager(t *testing.T) {
 	objects := renderChart(t, "--set", "hubDeployMode=AddOnTemplate")
 
@@ -69,6 +96,7 @@ func TestAddOnTemplateModeRendersTemplateAndOmitsHubManager(t *testing.T) {
 	assertObjectNotFound(t, objects, "Deployment", releaseNamespace, "managed-serviceaccount-addon-manager")
 	assertObjectNotFound(t, objects, "ServiceAccount", releaseNamespace, "managed-serviceaccount")
 	assertObjectNotFound(t, objects, "Service", releaseNamespace, "managed-serviceaccount-addon-manager-metrics")
+	assertAddOnTemplateDoesNotProvideHostedMode(t, addOnTemplate)
 }
 
 func TestAddOnTemplateModeWithClusterProfileRendersHubManager(t *testing.T) {
@@ -193,6 +221,19 @@ func mustNestedSlice(t *testing.T, object map[string]interface{}, fields ...stri
 	return values
 }
 
+func mustNestedStringSlice(t *testing.T, object map[string]interface{}, fields ...string) []string {
+	t.Helper()
+
+	values, found, err := unstructured.NestedStringSlice(object, fields...)
+	if err != nil {
+		t.Fatalf("failed to read field %v: %v", fields, err)
+	}
+	if !found {
+		t.Fatalf("missing field %v", fields)
+	}
+	return values
+}
+
 func assertNestedFieldNotFound(t *testing.T, object map[string]interface{}, fields ...string) {
 	t.Helper()
 
@@ -249,6 +290,25 @@ func assertAddOnTemplateDefaultConfig(t *testing.T, raw interface{}, name string
 	}
 	if ref["name"] != name {
 		t.Fatalf("unexpected default config name %v, want %s", ref["name"], name)
+	}
+}
+
+func assertAddOnTemplateDoesNotProvideHostedMode(t *testing.T, addOnTemplate *unstructured.Unstructured) {
+	t.Helper()
+
+	rendered, err := json.Marshal(addOnTemplate.Object)
+	if err != nil {
+		t.Fatalf("failed to serialize AddOnTemplate: %v", err)
+	}
+	for _, hostedOnly := range []string{
+		"addon.open-cluster-management.io/hosted-manifest-location",
+		"kubeconfig-provisioner",
+		"--install-mode=Hosted",
+		"--spoke-kubeconfig=",
+	} {
+		if bytes.Contains(rendered, []byte(hostedOnly)) {
+			t.Fatalf("AddOnTemplate mode must not contain hosted-only configuration %q", hostedOnly)
+		}
 	}
 }
 

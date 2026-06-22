@@ -97,6 +97,14 @@ test-helm: verify-helm-dependencies ## Lint and render Helm charts.
 		--namespace open-cluster-management-agent-addon \
 		--set Prometheus.Enabled=true \
 		--set imagePullSecretData=dGVzdA== >/dev/null
+	$(HELM) template managed-serviceaccount-agent pkg/addon/manager/manifests/charts/managed-serviceaccount-agent \
+		--namespace msa-spoke \
+		--set installMode=Hosted \
+		--set clusterName=spoke \
+		--set addonInstallNamespace=msa-spoke \
+		--set networkPolicies.enabled=true \
+		--set Prometheus.Enabled=true \
+		--set imagePullSecretData=dGVzdA== >/dev/null
 
 ##@ Build
 
@@ -107,6 +115,10 @@ build-bin:
 
 build-e2e:
 	go test -c -o bin/e2e ./e2e/
+
+.PHONY: build-e2e-cleanup
+build-e2e-cleanup:
+	go test -c -o bin/e2e-cleanup ./e2e/cleanup/
 
 run: manifests generate fmt vet ## Run a controller from your host.
 	go run ./main.go
@@ -178,6 +190,50 @@ test-integration:
 
 test-e2e: build-e2e
 	./bin/e2e --test-cluster $(E2E_TEST_CLUSTER_NAME) $(GENKGO_ARGS)
+
+.PHONY: test-e2e-cleanup
+test-e2e-cleanup: build-e2e-cleanup
+	./bin/e2e-cleanup --test-cluster $(E2E_TEST_CLUSTER_NAME) $(GENKGO_ARGS)
+
+# E2e variables for an agent running on a hosting cluster
+# (see README "Running the agent on a hosting cluster").
+HUB_KUBECONFIG ?=
+SPOKE_KUBECONFIG ?=
+AGENT_KUBECONFIG ?=
+EXTERNAL_MANAGED_KUBECONFIG_NAMESPACE ?=
+EXTERNAL_MANAGED_KUBECONFIG_SECRET ?=
+HOSTING_CLUSTER_NAME ?=
+HOSTED_INSTALL_NAMESPACE ?=
+
+HOSTED_E2E_ARGS = \
+	--hub-kubeconfig "$(HUB_KUBECONFIG)" \
+	--spoke-kubeconfig "$(SPOKE_KUBECONFIG)" \
+	--agent-kubeconfig "$(AGENT_KUBECONFIG)" \
+	--hosting-cluster-name "$(HOSTING_CLUSTER_NAME)" \
+	--hosted-install-namespace "$(HOSTED_INSTALL_NAMESPACE)" \
+	--external-managed-kubeconfig-namespace "$(EXTERNAL_MANAGED_KUBECONFIG_NAMESPACE)" \
+	--external-managed-kubeconfig-secret "$(EXTERNAL_MANAGED_KUBECONFIG_SECRET)"
+
+# The e2e binary validates every flag it receives; only the two variables whose
+# absence it cannot detect are checked here. An unset HUB_KUBECONFIG silently
+# falls back to ~/.kube/config, and an unset HOSTING_CLUSTER_NAME silently runs
+# the suite against an agent on the managed cluster.
+.PHONY: verify-hosted-e2e-variables
+verify-hosted-e2e-variables:
+	@missing=; \
+	[ -n "$(HUB_KUBECONFIG)" ]       || missing="$$missing HUB_KUBECONFIG"; \
+	[ -n "$(HOSTING_CLUSTER_NAME)" ] || missing="$$missing HOSTING_CLUSTER_NAME"; \
+	if [ -n "$$missing" ]; then \
+		echo "hosted e2e: required variables not set:$$missing" >&2; \
+		exit 1; \
+	fi
+
+.PHONY: test-e2e-hosted test-e2e-cleanup-hosted
+test-e2e-hosted: verify-hosted-e2e-variables build-e2e
+	./bin/e2e --test-cluster $(E2E_TEST_CLUSTER_NAME) $(HOSTED_E2E_ARGS) $(GENKGO_ARGS)
+
+test-e2e-cleanup-hosted: verify-hosted-e2e-variables build-e2e-cleanup
+	./bin/e2e-cleanup --test-cluster $(E2E_TEST_CLUSTER_NAME) $(HOSTED_E2E_ARGS) $(GENKGO_ARGS)
 
 code-gen: client-gen lister-gen informer-gen ## Generate clientset, listers and informers
 	hack/code_gen.sh

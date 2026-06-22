@@ -10,8 +10,23 @@ imagePullSecretData: ""
 clusterName: local-cluster
 addonInstallNamespace: open-cluster-management-agent-addon
 hubKubeConfigSecret: managed-serviceaccount-hub-kubeconfig
+managedKubeConfigSecret: managed-serviceaccount-managed-kubeconfig
+installMode: Default
 NodeSelector: {}
 Tolerations: []
+ResourceRequirements: []
+
+# Managed-cluster service account name, used in both install modes and
+# overridable per cluster through AddOnDeploymentConfig.spec.customizedVariables.
+managedServiceAccountName: managed-serviceaccount
+
+# Hosted-mode defaults, overridable per cluster through
+# AddOnDeploymentConfig.spec.customizedVariables.
+externalManagedKubeConfigNamespace: ""
+externalManagedKubeConfigSecret: external-managed-kubeconfig
+managedKubeConfigTokenExpirationSeconds: 3600
+managedKubeConfigRefreshBefore: 10m
+managedKubeConfigProvisionerSyncInterval: 5m
 
 Prometheus:
   Enabled: false

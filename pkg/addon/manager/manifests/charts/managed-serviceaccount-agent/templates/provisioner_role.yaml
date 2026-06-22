@@ -1,0 +1,27 @@
+{{- if eq .Values.installMode "Hosted" }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "managed-serviceaccount-agent.provisionerName" . }}
+  namespace: {{ .Values.addonInstallNamespace }}
+  annotations:
+    addon.open-cluster-management.io/hosted-manifest-location: hosting
+rules:
+# Kubernetes RBAC cannot restrict create requests by resourceNames. A hosted
+# agent therefore requires a dedicated addon install namespace per managed
+# cluster.
+- apiGroups: [""]
+  resources: ["secrets"]
+  verbs: ["create"]
+- apiGroups: [""]
+  resources: ["secrets"]
+  resourceNames: [{{ .Values.managedKubeConfigSecret | quote }}]
+  verbs: ["get", "update"]
+- apiGroups: [""]
+  resources: ["serviceaccounts"]
+  resourceNames: ["{{ include "managed-serviceaccount-agent.provisionerName" . }}"]
+  verbs: ["get"]
+- apiGroups: ["events.k8s.io"]
+  resources: ["events"]
+  verbs: ["create", "patch", "update"]
+{{- end }}

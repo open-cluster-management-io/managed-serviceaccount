@@ -2,7 +2,9 @@ package manager
 
 import (
 	"context"
+	"fmt"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	appsv1 "k8s.io/api/apps/v1"
@@ -10,17 +12,21 @@ import (
 	networkingv1 "k8s.io/api/networking/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	fakekube "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/utils/ptr"
+	"sigs.k8s.io/yaml"
+
 	"open-cluster-management.io/addon-framework/pkg/addonfactory"
 	"open-cluster-management.io/addon-framework/pkg/agent"
 	"open-cluster-management.io/addon-framework/pkg/utils"
 	addonv1beta1 "open-cluster-management.io/api/addon/v1beta1"
 	fakeaddon "open-cluster-management.io/api/client/addon/clientset/versioned/fake"
 	clusterv1 "open-cluster-management.io/api/cluster/v1"
+	"open-cluster-management.io/managed-serviceaccount/pkg/addon/provisioner"
 	"open-cluster-management.io/managed-serviceaccount/pkg/common"
 )
 
@@ -246,7 +252,7 @@ func TestManifestAddonAgent(t *testing.T) {
 				assert.Contains(t, container.Args, "--cluster-name="+clusterName)
 				assert.Equal(t, c.expectedNodeSelector, agentDeployment.Spec.Template.Spec.NodeSelector)
 				assert.Equal(t, c.expectedTolerations, agentDeployment.Spec.Template.Spec.Tolerations)
-				assertHubKubeconfigSecret(t, agentDeployment, hubKubeconfigSecretName)
+				assertDeploymentSecretVolume(t, agentDeployment, "hub-kubeconfig", hubKubeconfigSecretName)
 			}
 		})
 	}
@@ -298,6 +304,25 @@ func TestGetDefaultValuesRequiresDockerConfigJsonKey(t *testing.T) {
 			assert.ErrorContains(t, err, `missing ".dockerconfigjson"`)
 		})
 	}
+}
+
+func TestAgentChartRotationDefaultsMatchProvisioner(t *testing.T) {
+	data, err := FS.ReadFile("manifests/charts/managed-serviceaccount-agent/values.yaml")
+	assert.NoError(t, err)
+
+	values := struct {
+		TokenExpirationSeconds int64  `json:"managedKubeConfigTokenExpirationSeconds"`
+		RefreshBefore          string `json:"managedKubeConfigRefreshBefore"`
+		SyncInterval           string `json:"managedKubeConfigProvisionerSyncInterval"`
+	}{}
+	assert.NoError(t, yaml.Unmarshal(data, &values))
+	assert.Equal(t, provisioner.DefaultTokenExpirationSeconds, values.TokenExpirationSeconds)
+	refreshBefore, err := time.ParseDuration(values.RefreshBefore)
+	assert.NoError(t, err)
+	assert.Equal(t, provisioner.DefaultRefreshBefore, refreshBefore)
+	syncInterval, err := time.ParseDuration(values.SyncInterval)
+	assert.NoError(t, err)
+	assert.Equal(t, provisioner.DefaultSyncInterval, syncInterval)
 }
 
 func TestManifestAddonAgentUsesDeploymentConfigInstallNamespace(t *testing.T) {
@@ -384,36 +409,534 @@ func assertAgentSecurityContext(t *testing.T, deployment *appsv1.Deployment) {
 	t.Helper()
 
 	podSpec := deployment.Spec.Template.Spec
-	assert.Equal(t, &corev1.PodSecurityContext{
-		RunAsNonRoot:   ptr.To(true),
-		SeccompProfile: &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault},
-	}, podSpec.SecurityContext)
+	assertPodSecurityContext(t, podSpec)
 
 	if !assert.Len(t, podSpec.Containers, 1, "expected one addon agent container") {
 		return
 	}
+	assertContainerSecurityContext(t, podSpec.Containers[0])
+}
+
+func assertPodSecurityContext(t *testing.T, podSpec corev1.PodSpec) {
+	t.Helper()
+
+	assert.Equal(t, &corev1.PodSecurityContext{
+		RunAsNonRoot:   ptr.To(true),
+		SeccompProfile: &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault},
+	}, podSpec.SecurityContext)
+}
+
+func assertContainerSecurityContext(t *testing.T, container corev1.Container) {
+	t.Helper()
+
 	assert.Equal(t, &corev1.SecurityContext{
 		AllowPrivilegeEscalation: ptr.To(false),
 		ReadOnlyRootFilesystem:   ptr.To(true),
 		Capabilities:             &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}},
-	}, podSpec.Containers[0].SecurityContext)
+	}, container.SecurityContext)
 }
 
-func assertHubKubeconfigSecret(t *testing.T, deployment *appsv1.Deployment, expectedSecretName string) {
-	t.Helper()
+func TestManifestAddonAgentDeploymentOnManagedCluster(t *testing.T) {
+	clusterName := "cluster1"
+	addonName := "addon1"
+	imageName := "imageName1"
 
-	var hubKubeconfigVolume *corev1.Volume
-	for i := range deployment.Spec.Template.Spec.Volumes {
-		if deployment.Spec.Template.Spec.Volumes[i].Name == "hub-kubeconfig" {
-			hubKubeconfigVolume = &deployment.Spec.Template.Spec.Volumes[i]
-			break
-		}
+	// An addon without a hosting-cluster annotation still renders the agent on the
+	// managed cluster.
+	manifests := renderTestManifests(
+		t,
+		newTestCluster(clusterName),
+		newTestAddOn(addonName, clusterName),
+		GetDefaultValues(imageName, nil, false),
+	)
+	deployment := findDeployment(t, manifests)
+	container := deployment.Spec.Template.Spec.Containers[0]
+
+	assert.NotContains(t, deployment.Annotations, addonv1beta1.HostedManifestLocationAnnotationKey)
+	assert.Contains(t, container.Args, "--leader-elect=false")
+	assert.Contains(t, container.Args, "--cluster-name="+clusterName)
+	assert.Contains(t, container.Args, "--install-mode=Default")
+	assert.Contains(t, container.Args, "--kubeconfig=/etc/hub/kubeconfig")
+	assert.Contains(t, container.Args, "--lease-health-check=true")
+	// The args and volumes hosted gates are independent template blocks, so
+	// the missing-volume assert below does not cover this flag.
+	assert.NotContains(t, container.Args, "--spoke-kubeconfig=/etc/managed/kubeconfig")
+	assertDeploymentSecretVolume(t, deployment, "hub-kubeconfig", "managed-serviceaccount-hub-kubeconfig")
+	assertDeploymentMissingVolume(t, deployment, "managed-kubeconfig")
+
+	role := findRole(t, manifests, "open-cluster-management:managed-serviceaccount:addon-agent", "")
+	assertRule(t, role.Rules, []string{"coordination.k8s.io"}, []string{"leases"}, []string{"get", "create", "update", "patch"}, nil)
+	assertHostedManifestMissing[*rbacv1.Role](t, manifests, "managed-serviceaccount-health-lease", addonv1beta1.HostedManifestLocationHostingValue)
+}
+
+func TestManifestAddonAgentHostedModeDeployment(t *testing.T) {
+	clusterName := "cluster1"
+	addonName := "addon1"
+	imageName := "imageName1"
+
+	manifests := renderTestManifests(
+		t,
+		newTestCluster(clusterName),
+		newTestHostedAddOn(addonName, clusterName, "hosting1"),
+		GetDefaultValues(imageName, nil, false),
+	)
+	deployment := findDeployment(t, manifests)
+	container := deployment.Spec.Template.Spec.Containers[0]
+
+	assert.Equal(t,
+		addonv1beta1.HostedManifestLocationHostingValue,
+		deployment.Annotations[addonv1beta1.HostedManifestLocationAnnotationKey])
+	assert.Contains(t, container.Args, "--install-mode=Hosted")
+	assert.Contains(t, container.Args, "--kubeconfig=/etc/hub/kubeconfig")
+	assert.Contains(t, container.Args, "--spoke-kubeconfig=/etc/managed/kubeconfig")
+	assert.Contains(t, container.Args, "--lease-health-check=true")
+	assertDeploymentSecretVolume(t, deployment, "hub-kubeconfig", "managed-serviceaccount-hub-kubeconfig")
+	assertDeploymentSecretVolume(t, deployment, "managed-kubeconfig", addonName+"-managed-kubeconfig")
+	assertDeploymentVolumeMount(t, deployment, "hub-kubeconfig", "/etc/hub/")
+	assertDeploymentVolumeMount(t, deployment, "managed-kubeconfig", "/etc/managed/")
+}
+
+func TestManifestAddonAgentHostedModeManagedKubeConfigSecretOverride(t *testing.T) {
+	clusterName := "cluster1"
+	addonName := "addon1"
+	imageName := "imageName1"
+	managedKubeConfigSecret := "custom-managed-kubeconfig"
+
+	manifests := renderTestManifests(
+		t,
+		newTestCluster(clusterName),
+		newTestHostedAddOn(addonName, clusterName, "hosting1"),
+		GetDefaultValues(imageName, nil, false),
+		func(_ *clusterv1.ManagedCluster, _ *addonv1beta1.ManagedClusterAddOn) (addonfactory.Values, error) {
+			return addonfactory.Values{
+				"managedKubeConfigSecret": managedKubeConfigSecret,
+			}, nil
+		},
+	)
+	deployment := findDeployment(t, manifests)
+
+	assertDeploymentSecretVolume(t, deployment, "managed-kubeconfig", managedKubeConfigSecret)
+}
+
+func TestManifestAddonAgentHostedModeSecretNameCannotInjectManifestStructure(t *testing.T) {
+	clusterName := "cluster1"
+	addonName := "addon1"
+	imageName := "imageName1"
+	// Bypasses ValidateAddOnAgentVariables on purpose: the chart's own quoting
+	// must keep a newline-bearing value a single scalar even if validation
+	// regresses. The indentation lands hostNetwork in the pod spec if quoting
+	// is ever removed, which the HostNetwork assert below would catch.
+	injectedValue := "evil\n      hostNetwork: true"
+
+	manifests := renderTestManifests(
+		t,
+		newTestCluster(clusterName),
+		newTestHostedAddOn(addonName, clusterName, "hosting1"),
+		GetDefaultValues(imageName, nil, false),
+		func(_ *clusterv1.ManagedCluster, _ *addonv1beta1.ManagedClusterAddOn) (addonfactory.Values, error) {
+			return addonfactory.Values{
+				"managedKubeConfigSecret": injectedValue,
+			}, nil
+		},
+	)
+	deployment := findDeployment(t, manifests)
+
+	assert.False(t, deployment.Spec.Template.Spec.HostNetwork)
+	assertDeploymentSecretVolume(t, deployment, "managed-kubeconfig", injectedValue)
+}
+
+func TestManifestAddonAgentHostedModeManifestLocations(t *testing.T) {
+	clusterName := "cluster1"
+	addonName := "addon1"
+	imageName := "imageName1"
+
+	manifests := renderTestManifests(
+		t,
+		newTestCluster(clusterName),
+		newTestHostedAddOn(addonName, clusterName, "hosting1"),
+		GetDefaultValues(imageName, newTestImagePullSecret(), false),
+	)
+
+	// The finders match on name and hosted location, so a successful lookup is the assertion.
+	findServiceAccount(t, manifests, "managed-serviceaccount", "")
+	findServiceAccount(t, manifests, "managed-serviceaccount", addonv1beta1.HostedManifestLocationHostingValue)
+	findRole(t, manifests, "open-cluster-management:managed-serviceaccount:addon-agent", "")
+	findRoleBinding(t, manifests, "open-cluster-management:managed-serviceaccount:addon-agent", "")
+	assertHostedManifestMissing[*rbacv1.Role](
+		t, manifests, "open-cluster-management:managed-serviceaccount:addon-agent",
+		addonv1beta1.HostedManifestLocationHostingValue)
+	assertHostedManifestMissing[*rbacv1.RoleBinding](
+		t, manifests, "open-cluster-management:managed-serviceaccount:addon-agent",
+		addonv1beta1.HostedManifestLocationHostingValue)
+
+	assert.Equal(t, addonv1beta1.HostedManifestLocationHostingValue, hostedLocation(findDeployment(t, manifests)))
+	assert.Equal(t, addonv1beta1.HostedManifestLocationHostingValue,
+		hostedLocation(findDeploymentByName(t, manifests, "managed-serviceaccount-kubeconfig-provisioner")))
+	findSecret(t, manifests, "open-cluster-management-image-pull-credentials", addonv1beta1.HostedManifestLocationHostingValue)
+	findServiceAccount(t, manifests, "managed-serviceaccount-kubeconfig-provisioner", addonv1beta1.HostedManifestLocationHostingValue)
+	findRole(t, manifests, "managed-serviceaccount-kubeconfig-provisioner", addonv1beta1.HostedManifestLocationHostingValue)
+	findRoleBinding(t, manifests, "managed-serviceaccount-kubeconfig-provisioner", addonv1beta1.HostedManifestLocationHostingValue)
+	findRoleBinding(t, manifests, testProvisionerSourceRBACName(addonName), addonv1beta1.HostedManifestLocationHostingValue)
+	findRole(t, manifests, "managed-serviceaccount-health-lease", addonv1beta1.HostedManifestLocationHostingValue)
+	findRoleBinding(t, manifests, "managed-serviceaccount-health-lease", addonv1beta1.HostedManifestLocationHostingValue)
+	assertHostedManifestMissing[*networkingv1.NetworkPolicy](
+		t, manifests, "managed-serviceaccount-kubeconfig-provisioner-network-policy",
+		addonv1beta1.HostedManifestLocationHostingValue)
+
+	// An unannotated manifest goes to the managed cluster, like the Role/RoleBinding/ServiceAccount above.
+	assert.Empty(t,
+		hostedLocation(findClusterRole(t, manifests, "open-cluster-management:managed-serviceaccount:addon-agent")))
+	assert.Empty(t,
+		hostedLocation(findClusterRoleBinding(t, manifests, "open-cluster-management:managed-serviceaccount:addon-agent")))
+}
+
+func TestManifestAddonAgentHostedModeLeaseRBAC(t *testing.T) {
+	clusterName := "cluster1"
+	addonName := "addon1"
+	imageName := "imageName1"
+
+	manifests := renderTestManifests(
+		t,
+		newTestCluster(clusterName),
+		newTestHostedAddOn(addonName, clusterName, "hosting1"),
+		GetDefaultValues(imageName, nil, false),
+	)
+
+	deployment := findDeployment(t, manifests)
+	assert.Contains(t, deployment.Spec.Template.Spec.Containers[0].Args, "--lease-health-check=true")
+	assert.Contains(t, deployment.Spec.Template.Spec.Containers[0].Args, "--install-mode=Hosted")
+
+	role := findRole(t, manifests, "open-cluster-management:managed-serviceaccount:addon-agent", "")
+	assert.Equal(t, addonName, role.Namespace)
+	for _, rule := range role.Rules {
+		assert.NotContains(t, rule.APIGroups, "coordination.k8s.io",
+			"an agent running on a hosting cluster should have lease permissions only there")
 	}
 
-	if assert.NotNil(t, hubKubeconfigVolume, "expected hub kubeconfig volume") &&
-		assert.NotNil(t, hubKubeconfigVolume.Secret, "expected hub kubeconfig volume to use a secret") {
-		assert.Equal(t, expectedSecretName, hubKubeconfigVolume.Secret.SecretName)
+	binding := findRoleBinding(t, manifests, "open-cluster-management:managed-serviceaccount:addon-agent", "")
+	assert.Equal(t, addonName, binding.Namespace)
+	assertRoleBindingBinds(t, binding, "open-cluster-management:managed-serviceaccount:addon-agent", "managed-serviceaccount", addonName)
+
+	hostingRole := findRole(t, manifests, "managed-serviceaccount-health-lease", addonv1beta1.HostedManifestLocationHostingValue)
+	assert.Equal(t, addonName, hostingRole.Namespace)
+	assertRule(t, hostingRole.Rules, []string{"coordination.k8s.io"}, []string{"leases"}, []string{"create"}, nil)
+	assertRule(t, hostingRole.Rules, []string{"coordination.k8s.io"}, []string{"leases"}, []string{"get", "update", "patch"}, []string{"managed-serviceaccount"})
+
+	hostingBinding := findRoleBinding(t, manifests, "managed-serviceaccount-health-lease", addonv1beta1.HostedManifestLocationHostingValue)
+	assert.Equal(t, addonName, hostingBinding.Namespace)
+	assertRoleBindingBinds(t, hostingBinding, "managed-serviceaccount-health-lease", "managed-serviceaccount", addonName)
+}
+
+func TestManifestAddonAgentHostedModeExternalManagedKubeConfigOverrides(t *testing.T) {
+	clusterName := "cluster1"
+	addonName := "addon1"
+	imageName := "imageName1"
+
+	manifests := renderTestManifests(
+		t,
+		newTestCluster(clusterName),
+		newTestHostedAddOn(addonName, clusterName, "hosting1"),
+		GetDefaultValues(imageName, nil, false),
+		func(_ *clusterv1.ManagedCluster, _ *addonv1beta1.ManagedClusterAddOn) (addonfactory.Values, error) {
+			return addonfactory.Values{
+				"externalManagedKubeConfigNamespace": "custom-source-ns",
+				"externalManagedKubeConfigSecret":    "custom-source-secret",
+				"managedKubeConfigSecret":            "custom-target-secret",
+			}, nil
+		},
+	)
+
+	prov := findDeploymentByName(t, manifests, "managed-serviceaccount-kubeconfig-provisioner")
+	args := prov.Spec.Template.Spec.Containers[0].Args
+	assert.Contains(t, args, "--source-namespace=custom-source-ns")
+	assert.Contains(t, args, "--source-secret=custom-source-secret")
+	assert.Contains(t, args, "--target-secret=custom-target-secret")
+
+	targetRole := findRole(t, manifests, "managed-serviceaccount-kubeconfig-provisioner", addonv1beta1.HostedManifestLocationHostingValue)
+	assert.Equal(t, addonName, targetRole.Namespace)
+	assertRule(t, targetRole.Rules, []string{""}, []string{"secrets"}, []string{"get", "update"}, []string{"custom-target-secret"})
+	assertRule(t, targetRole.Rules, []string{""}, []string{"secrets"}, []string{"create"}, nil)
+	assertRule(t, targetRole.Rules, []string{""}, []string{"serviceaccounts"}, []string{"get"}, []string{"managed-serviceaccount-kubeconfig-provisioner"})
+	assertRule(t, targetRole.Rules, []string{"events.k8s.io"}, []string{"events"}, []string{"create", "patch", "update"}, nil)
+
+	sourceRBACName := testProvisionerSourceRBACName(addonName)
+	sourceRole := findRole(t, manifests, sourceRBACName, addonv1beta1.HostedManifestLocationHostingValue)
+	assert.Equal(t, "custom-source-ns", sourceRole.Namespace)
+	assertRule(t, sourceRole.Rules, []string{""}, []string{"secrets"}, []string{"get"}, []string{"custom-source-secret"})
+
+	sourceBinding := findRoleBinding(t, manifests, sourceRBACName, addonv1beta1.HostedManifestLocationHostingValue)
+	assert.Equal(t, "custom-source-ns", sourceBinding.Namespace)
+	assertRoleBindingBinds(t, sourceBinding, sourceRBACName, "managed-serviceaccount-kubeconfig-provisioner", addonName)
+}
+
+func TestManifestAddonAgentHostedModeSourceRBACNamesAreUniqueInSharedNamespace(t *testing.T) {
+	sourceNamespace := "shared-source"
+	firstAddonName := "addon1"
+	secondAddonName := "addon2"
+
+	render := func(clusterName, addonName, sourceSecret string) []runtime.Object {
+		return renderTestManifests(
+			t,
+			newTestCluster(clusterName),
+			newTestHostedAddOn(addonName, clusterName, "hosting1"),
+			GetDefaultValues("imageName1", nil, false),
+			func(_ *clusterv1.ManagedCluster, _ *addonv1beta1.ManagedClusterAddOn) (addonfactory.Values, error) {
+				return addonfactory.Values{
+					"externalManagedKubeConfigNamespace": sourceNamespace,
+					"externalManagedKubeConfigSecret":    sourceSecret,
+				}, nil
+			},
+		)
 	}
+
+	firstManifests := render("cluster1", firstAddonName, "cluster1-kubeconfig")
+	secondManifests := render("cluster2", secondAddonName, "cluster2-kubeconfig")
+	firstName := testProvisionerSourceRBACName(firstAddonName)
+	secondName := testProvisionerSourceRBACName(secondAddonName)
+
+	assert.NotEqual(t, firstName, secondName)
+	for _, test := range []struct {
+		manifests        []runtime.Object
+		name             string
+		sourceSecret     string
+		subjectNamespace string
+	}{
+		{
+			manifests:        firstManifests,
+			name:             firstName,
+			sourceSecret:     "cluster1-kubeconfig",
+			subjectNamespace: firstAddonName,
+		},
+		{
+			manifests:        secondManifests,
+			name:             secondName,
+			sourceSecret:     "cluster2-kubeconfig",
+			subjectNamespace: secondAddonName,
+		},
+	} {
+		role := findRole(t, test.manifests, test.name, addonv1beta1.HostedManifestLocationHostingValue)
+		assert.Equal(t, sourceNamespace, role.Namespace)
+		assertRule(t, role.Rules, []string{""}, []string{"secrets"}, []string{"get"}, []string{test.sourceSecret})
+
+		binding := findRoleBinding(t, test.manifests, test.name, addonv1beta1.HostedManifestLocationHostingValue)
+		assert.Equal(t, sourceNamespace, binding.Namespace)
+		assertRoleBindingBinds(t, binding, test.name, "managed-serviceaccount-kubeconfig-provisioner", test.subjectNamespace)
+	}
+}
+
+func TestManifestAddonAgentHostedModeProvisioner(t *testing.T) {
+	clusterName := "cluster1"
+	addonName := "addon1"
+	imageName := "imageName1"
+	resources := corev1.ResourceRequirements{
+		Requests: corev1.ResourceList{
+			corev1.ResourceCPU:    resource.MustParse("10m"),
+			corev1.ResourceMemory: resource.MustParse("32Mi"),
+		},
+		Limits: corev1.ResourceList{
+			corev1.ResourceCPU:    resource.MustParse("100m"),
+			corev1.ResourceMemory: resource.MustParse("128Mi"),
+		},
+	}
+	nodeSelector := map[string]string{"node-role.kubernetes.io/hosting": "true"}
+	tolerations := []corev1.Toleration{{Key: "dedicated", Operator: corev1.TolerationOpEqual, Value: "hosting", Effect: corev1.TaintEffectNoSchedule}}
+
+	cases := []struct {
+		name     string
+		values   addonfactory.GetValuesFunc
+		validate func(t *testing.T, manifests []runtime.Object, prov *appsv1.Deployment)
+	}{
+		{
+			name: "source configuration and RBAC",
+			validate: func(t *testing.T, manifests []runtime.Object, prov *appsv1.Deployment) {
+				args := prov.Spec.Template.Spec.Containers[0].Args
+				assert.Contains(t, args, "--source-namespace="+clusterName)
+				assert.Contains(t, args, "--source-secret=external-managed-kubeconfig")
+				assert.Contains(t, args, "--target-secret="+addonName+"-managed-kubeconfig")
+				assert.Contains(t, args, "--hosting-service-account-name=managed-serviceaccount-kubeconfig-provisioner")
+
+				sourceRBACName := testProvisionerSourceRBACName(addonName)
+				sourceRole := findRole(t, manifests, sourceRBACName, addonv1beta1.HostedManifestLocationHostingValue)
+				assert.Equal(t, clusterName, sourceRole.Namespace)
+				assertRule(t, sourceRole.Rules, []string{""}, []string{"secrets"}, []string{"get"}, []string{"external-managed-kubeconfig"})
+
+				sourceBinding := findRoleBinding(t, manifests, sourceRBACName, addonv1beta1.HostedManifestLocationHostingValue)
+				assert.Equal(t, clusterName, sourceBinding.Namespace)
+				assertRoleBindingBinds(t, sourceBinding, sourceRBACName, "managed-serviceaccount-kubeconfig-provisioner", addonName)
+			},
+		},
+		{
+			name: "timing defaults",
+			validate: func(t *testing.T, _ []runtime.Object, prov *appsv1.Deployment) {
+				args := prov.Spec.Template.Spec.Containers[0].Args
+				assert.Contains(t, args, fmt.Sprintf("--token-expiration-seconds=%d", provisioner.DefaultTokenExpirationSeconds))
+				assert.Contains(t, args, "--refresh-before="+provisioner.DefaultRefreshBefore.String())
+				assert.Contains(t, args, "--sync-interval="+provisioner.DefaultSyncInterval.String())
+			},
+		},
+		{
+			name: "timing overrides",
+			values: func(_ *clusterv1.ManagedCluster, _ *addonv1beta1.ManagedClusterAddOn) (addonfactory.Values, error) {
+				return addonfactory.Values{
+					"managedKubeConfigTokenExpirationSeconds":  int64(7200),
+					"managedKubeConfigRefreshBefore":           "15m",
+					"managedKubeConfigProvisionerSyncInterval": "30s",
+				}, nil
+			},
+			validate: func(t *testing.T, _ []runtime.Object, prov *appsv1.Deployment) {
+				args := prov.Spec.Template.Spec.Containers[0].Args
+				assert.Contains(t, args, "--token-expiration-seconds=7200")
+				assert.Contains(t, args, "--refresh-before=15m")
+				assert.Contains(t, args, "--sync-interval=30s")
+			},
+		},
+		{
+			name: "resource requirements",
+			values: func(_ *clusterv1.ManagedCluster, _ *addonv1beta1.ManagedClusterAddOn) (addonfactory.Values, error) {
+				return addonfactory.ToAddOnDeploymentConfigValues(addonv1beta1.AddOnDeploymentConfig{
+					Spec: addonv1beta1.AddOnDeploymentConfigSpec{
+						ResourceRequirements: []addonv1beta1.ContainerResourceRequirements{
+							{
+								ContainerID: "deployments:managed-serviceaccount-kubeconfig-provisioner:kubeconfig-provisioner",
+								Resources:   resources,
+							},
+						},
+					},
+				})
+			},
+			validate: func(t *testing.T, _ []runtime.Object, prov *appsv1.Deployment) {
+				if assert.Len(t, prov.Spec.Template.Spec.Containers, 1, "expected one provisioner container") {
+					assert.Equal(t, resources, prov.Spec.Template.Spec.Containers[0].Resources)
+				}
+			},
+		},
+		{
+			name: "security context",
+			validate: func(t *testing.T, _ []runtime.Object, prov *appsv1.Deployment) {
+				assertPodSecurityContext(t, prov.Spec.Template.Spec)
+				if assert.Len(t, prov.Spec.Template.Spec.Containers, 1, "expected one provisioner container") {
+					assertContainerSecurityContext(t, prov.Spec.Template.Spec.Containers[0])
+				}
+			},
+		},
+		{
+			name:   "node placement",
+			values: getNodePlacementValues(nodeSelector, tolerations),
+			validate: func(t *testing.T, _ []runtime.Object, prov *appsv1.Deployment) {
+				assert.Equal(t, nodeSelector, prov.Spec.Template.Spec.NodeSelector)
+				assert.Equal(t, tolerations, prov.Spec.Template.Spec.Tolerations)
+			},
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			getValuesFuncs := []addonfactory.GetValuesFunc{GetDefaultValues(imageName, nil, false)}
+			if c.values != nil {
+				getValuesFuncs = append(getValuesFuncs, c.values)
+			}
+			manifests := renderTestManifests(
+				t,
+				newTestCluster(clusterName),
+				newTestHostedAddOn(addonName, clusterName, "hosting1"),
+				getValuesFuncs...,
+			)
+			c.validate(t, manifests, findDeploymentByName(t, manifests, "managed-serviceaccount-kubeconfig-provisioner"))
+		})
+	}
+}
+
+func TestManifestAddonAgentServiceAccountNameOverrideOnManagedCluster(t *testing.T) {
+	clusterName := "cluster1"
+	addonName := "addon1"
+	imageName := "imageName1"
+	customName := "custom-msa"
+	installNamespace := addonfactory.AddonDefaultInstallNamespace
+
+	manifests := renderTestManifests(
+		t,
+		newTestCluster(clusterName),
+		newTestAddOn(addonName, clusterName),
+		GetDefaultValues(imageName, nil, false),
+		func(_ *clusterv1.ManagedCluster, _ *addonv1beta1.ManagedClusterAddOn) (addonfactory.Values, error) {
+			return addonfactory.Values{
+				"managedServiceAccountName": customName,
+			}, nil
+		},
+	)
+
+	sa := findServiceAccount(t, manifests, customName, "")
+	assert.Equal(t, installNamespace, sa.Namespace)
+
+	binding := findRoleBinding(t, manifests, "open-cluster-management:managed-serviceaccount:addon-agent", "")
+	assert.Len(t, binding.Subjects, 1)
+	assert.Equal(t, customName, binding.Subjects[0].Name)
+	assert.Equal(t, installNamespace, binding.Subjects[0].Namespace)
+
+	clusterBinding := findClusterRoleBinding(t, manifests, "open-cluster-management:managed-serviceaccount:addon-agent")
+	assert.Len(t, clusterBinding.Subjects, 1)
+	assert.Equal(t, customName, clusterBinding.Subjects[0].Name)
+	assert.Equal(t, installNamespace, clusterBinding.Subjects[0].Namespace)
+
+	deployment := findDeployment(t, manifests)
+	assert.Equal(t, customName, deployment.Spec.Template.Spec.ServiceAccountName)
+}
+
+func TestManifestAddonAgentHostedModeManagedServiceAccountNameOverride(t *testing.T) {
+	clusterName := "cluster1"
+	addonName := "addon1"
+	imageName := "imageName1"
+	customName := "custom-msa"
+
+	manifests := renderTestManifests(
+		t,
+		newTestCluster(clusterName),
+		newTestHostedAddOn(addonName, clusterName, "hosting1"),
+		GetDefaultValues(imageName, nil, false),
+		func(_ *clusterv1.ManagedCluster, _ *addonv1beta1.ManagedClusterAddOn) (addonfactory.Values, error) {
+			return addonfactory.Values{
+				"managedServiceAccountName": customName,
+			}, nil
+		},
+	)
+
+	sa := findServiceAccount(t, manifests, customName, "")
+	assert.Equal(t, addonName, sa.Namespace)
+
+	binding := findRoleBinding(t, manifests, "open-cluster-management:managed-serviceaccount:addon-agent", "")
+	assert.Len(t, binding.Subjects, 1)
+	assert.Equal(t, customName, binding.Subjects[0].Name)
+	assert.Equal(t, addonName, binding.Subjects[0].Namespace)
+
+	clusterBinding := findClusterRoleBinding(t, manifests, "open-cluster-management:managed-serviceaccount:addon-agent")
+	assert.Len(t, clusterBinding.Subjects, 1)
+	assert.Equal(t, customName, clusterBinding.Subjects[0].Name)
+	assert.Equal(t, addonName, clusterBinding.Subjects[0].Namespace)
+
+	prov := findDeploymentByName(t, manifests, "managed-serviceaccount-kubeconfig-provisioner")
+	assert.Contains(t, prov.Spec.Template.Spec.Containers[0].Args, "--managed-serviceaccount-name="+customName)
+
+	deployment := findDeployment(t, manifests)
+	assert.Equal(t, "managed-serviceaccount", deployment.Spec.Template.Spec.ServiceAccountName)
+	hostingSA := findServiceAccount(t, manifests, "managed-serviceaccount", addonv1beta1.HostedManifestLocationHostingValue)
+	assert.Equal(t, addonName, hostingSA.Namespace)
+}
+
+func TestManifestAddonAgentHostedModeNamespaces(t *testing.T) {
+	clusterName := "cluster1"
+	addonName := "addon1"
+	imageName := "imageName1"
+
+	manifests := renderTestManifests(
+		t,
+		newTestCluster(clusterName),
+		newTestHostedAddOn(addonName, clusterName, "hosting1"),
+		GetDefaultValues(imageName, nil, false),
+	)
+
+	assert.Len(t, findNamespaces(manifests), 2)
+	findHostedManifest[*corev1.Namespace](t, manifests, addonName, addonv1beta1.HostedManifestLocationHostingValue)
+	findHostedManifest[*corev1.Namespace](t, manifests, addonName, "")
 }
 
 func TestManifestAddonServiceMonitor(t *testing.T) {
@@ -517,6 +1040,7 @@ func TestManifestAddonNetworkPolicy(t *testing.T) {
 				return
 			}
 			assert.Equal(t, "managed-serviceaccount-addon-agent-network-policy", np.Name)
+			assert.Empty(t, hostedLocation(np), "NetworkPolicy must stay with the agent on the managed cluster")
 			assert.Contains(t, np.Spec.PolicyTypes, networkingv1.PolicyTypeIngress)
 			assert.Contains(t, np.Spec.PolicyTypes, networkingv1.PolicyTypeEgress)
 			assert.True(t, networkPolicyAllowsEgressTCPPort(np, 443))
@@ -527,6 +1051,42 @@ func TestManifestAddonNetworkPolicy(t *testing.T) {
 				"health :8000 must be opened for kubelet livenessProbe")
 		})
 	}
+}
+
+func TestManifestAddonAgentHostedModeNetworkPolicy(t *testing.T) {
+	clusterName := "cluster1"
+	addonName := "addon1"
+
+	manifests := renderTestManifests(
+		t,
+		newTestCluster(clusterName),
+		newTestHostedAddOn(addonName, clusterName, "hosting1"),
+		GetDefaultValues("imageName1", nil, true),
+	)
+
+	networkPolicy := findHostedManifest[*networkingv1.NetworkPolicy](
+		t,
+		manifests,
+		"managed-serviceaccount-addon-agent-network-policy",
+		addonv1beta1.HostedManifestLocationHostingValue,
+	)
+	assert.Equal(t, addonName, networkPolicy.Namespace)
+
+	provisionerNetworkPolicy := findHostedManifest[*networkingv1.NetworkPolicy](
+		t,
+		manifests,
+		"managed-serviceaccount-kubeconfig-provisioner-network-policy",
+		addonv1beta1.HostedManifestLocationHostingValue,
+	)
+	assert.Equal(t, addonName, provisionerNetworkPolicy.Namespace)
+	assert.Equal(t, map[string]string{
+		"addon-agent": "managed-serviceaccount-kubeconfig-provisioner",
+	}, provisionerNetworkPolicy.Spec.PodSelector.MatchLabels)
+	assert.Contains(t, provisionerNetworkPolicy.Spec.PolicyTypes, networkingv1.PolicyTypeIngress)
+	assert.Contains(t, provisionerNetworkPolicy.Spec.PolicyTypes, networkingv1.PolicyTypeEgress)
+	assert.Empty(t, provisionerNetworkPolicy.Spec.Ingress)
+	assert.True(t, networkPolicyAllowsEgressTCPPort(provisionerNetworkPolicy, 443))
+	assert.True(t, networkPolicyAllowsEgressTCPPort(provisionerNetworkPolicy, 6443))
 }
 
 func TestToAddOnPrometheusValuesRejectsInvalidServiceMonitorLabels(t *testing.T) {
@@ -558,6 +1118,99 @@ func TestToAddOnPrometheusValuesRejectsInvalidServiceMonitorLabels(t *testing.T)
 	}
 }
 
+func TestValidateAddOnAgentVariables(t *testing.T) {
+	cases := []struct {
+		name          string
+		variables     []addonv1beta1.CustomizedVariable
+		expectedError bool
+	}{
+		{
+			name: "default values are valid",
+		},
+		{
+			name: "valid values pass through",
+			variables: []addonv1beta1.CustomizedVariable{
+				{Name: managedKubeConfigTokenExpirationSecondsVariableName, Value: "600"},
+				{Name: managedKubeConfigRefreshBeforeVariableName, Value: "599s"},
+				{Name: managedKubeConfigProvisionerSyncIntervalVariableName, Value: "30s"},
+			},
+		},
+		{
+			name:      "unrelated variables are ignored",
+			variables: []addonv1beta1.CustomizedVariable{{Name: "somethingElse", Value: "anything\ngoes"}},
+		},
+		{
+			name:      "allows empty source namespace",
+			variables: []addonv1beta1.CustomizedVariable{{Name: externalManagedKubeConfigNamespaceVariableName, Value: ""}},
+		},
+		{
+			name:          "rejects newline in source namespace",
+			variables:     []addonv1beta1.CustomizedVariable{{Name: externalManagedKubeConfigNamespaceVariableName, Value: "ns\nextra"}},
+			expectedError: true,
+		},
+		{
+			name:          "rejects invalid managed serviceaccount name",
+			variables:     []addonv1beta1.CustomizedVariable{{Name: managedServiceAccountNameVariableName, Value: "Not_A_Name"}},
+			expectedError: true,
+		},
+		{
+			name:          "rejects any hub kubeconfig secret override",
+			variables:     []addonv1beta1.CustomizedVariable{{Name: hubKubeConfigSecretVariableName, Value: "valid-secret-name"}},
+			expectedError: true,
+		},
+		{
+			name:          "rejects invalid managed kubeconfig secret name",
+			variables:     []addonv1beta1.CustomizedVariable{{Name: managedKubeConfigSecretVariableName, Value: "Not_A_Secret"}},
+			expectedError: true,
+		},
+		{
+			name:          "rejects empty source secret name",
+			variables:     []addonv1beta1.CustomizedVariable{{Name: externalManagedKubeConfigSecretVariableName, Value: ""}},
+			expectedError: true,
+		},
+		{
+			name:          "rejects non-duration refresh before",
+			variables:     []addonv1beta1.CustomizedVariable{{Name: managedKubeConfigRefreshBeforeVariableName, Value: "10 minutes"}},
+			expectedError: true,
+		},
+		{
+			name:          "rejects non-duration sync interval",
+			variables:     []addonv1beta1.CustomizedVariable{{Name: managedKubeConfigProvisionerSyncIntervalVariableName, Value: "five minutes"}},
+			expectedError: true,
+		},
+		{
+			name:          "rejects non-integer token expiration seconds",
+			variables:     []addonv1beta1.CustomizedVariable{{Name: managedKubeConfigTokenExpirationSecondsVariableName, Value: "3600s"}},
+			expectedError: true,
+		},
+		{
+			name:          "rejects token expiration below the Kubernetes minimum",
+			variables:     []addonv1beta1.CustomizedVariable{{Name: managedKubeConfigTokenExpirationSecondsVariableName, Value: "599"}},
+			expectedError: true,
+		},
+		{
+			name:          "validates customized token lifetime against the default refresh before",
+			variables:     []addonv1beta1.CustomizedVariable{{Name: managedKubeConfigTokenExpirationSecondsVariableName, Value: "600"}},
+			expectedError: true,
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			_, err := ValidateAddOnAgentVariables(addonv1beta1.AddOnDeploymentConfig{
+				Spec: addonv1beta1.AddOnDeploymentConfigSpec{
+					CustomizedVariables: c.variables,
+				},
+			})
+			if c.expectedError {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
 func renderTestManifests(
 	t *testing.T,
 	cluster *clusterv1.ManagedCluster,
@@ -578,11 +1231,11 @@ func renderTestManifestsWithNamespaceFunc(
 
 	agentFactory := addonfactory.NewAgentAddonFactory(common.AddonName, FS, "manifests/charts/managed-serviceaccount-agent").
 		WithScheme(NewAgentScheme()).
-		WithGetValuesFuncs(getValuesFuncs...)
+		WithGetValuesFuncs(getValuesFuncs...).
+		WithAgentRegistrationOption(NewRegistrationOption(fakekube.NewSimpleClientset()))
 	if agentInstallNamespace != nil {
 		agentFactory = agentFactory.WithAgentInstallNamespace(agentInstallNamespace)
 	}
-
 	addOnAgent, err := agentFactory.BuildHelmAgentAddon()
 	assert.NoError(t, err)
 
@@ -666,6 +1319,174 @@ func networkPolicyAllowsIngressTCPPort(np *networkingv1.NetworkPolicy, port int3
 	return false
 }
 
+func findDeployment(t *testing.T, manifests []runtime.Object) *appsv1.Deployment {
+	t.Helper()
+	return findDeploymentByName(t, manifests, "managed-serviceaccount-addon-agent")
+}
+
+func findDeploymentByName(t *testing.T, manifests []runtime.Object, name string) *appsv1.Deployment {
+	t.Helper()
+	return findManifestByName[*appsv1.Deployment](t, manifests, name)
+}
+
+func findSecret(t *testing.T, manifests []runtime.Object, name, location string) *corev1.Secret {
+	t.Helper()
+	return findHostedManifest[*corev1.Secret](t, manifests, name, location)
+}
+
+func findServiceAccount(t *testing.T, manifests []runtime.Object, name, location string) *corev1.ServiceAccount {
+	t.Helper()
+	return findHostedManifest[*corev1.ServiceAccount](t, manifests, name, location)
+}
+
+func findRole(t *testing.T, manifests []runtime.Object, name, location string) *rbacv1.Role {
+	t.Helper()
+	return findHostedManifest[*rbacv1.Role](t, manifests, name, location)
+}
+
+func findRoleBinding(t *testing.T, manifests []runtime.Object, name, location string) *rbacv1.RoleBinding {
+	t.Helper()
+	return findHostedManifest[*rbacv1.RoleBinding](t, manifests, name, location)
+}
+
+func findClusterRole(t *testing.T, manifests []runtime.Object, name string) *rbacv1.ClusterRole {
+	t.Helper()
+	return findManifestByName[*rbacv1.ClusterRole](t, manifests, name)
+}
+
+func findClusterRoleBinding(t *testing.T, manifests []runtime.Object, name string) *rbacv1.ClusterRoleBinding {
+	t.Helper()
+	return findManifestByName[*rbacv1.ClusterRoleBinding](t, manifests, name)
+}
+
+type manifestObject interface {
+	runtime.Object
+	metav1.Object
+}
+
+func findManifestByName[T manifestObject](t *testing.T, manifests []runtime.Object, name string) T {
+	t.Helper()
+
+	for _, manifest := range manifests {
+		obj, ok := manifest.(T)
+		if ok && obj.GetName() == name {
+			return obj
+		}
+	}
+
+	var zero T
+	t.Fatalf("%T %q not found", zero, name)
+	return zero
+}
+
+func findHostedManifest[T manifestObject](t *testing.T, manifests []runtime.Object, name, location string) T {
+	t.Helper()
+
+	for _, manifest := range manifests {
+		obj, ok := manifest.(T)
+		if ok && obj.GetName() == name && hostedLocation(obj) == location {
+			return obj
+		}
+	}
+
+	var zero T
+	t.Fatalf("%T %q with hosted location %q not found", zero, name, location)
+	return zero
+}
+
+func assertHostedManifestMissing[T manifestObject](t *testing.T, manifests []runtime.Object, name, location string) {
+	t.Helper()
+
+	for _, manifest := range manifests {
+		obj, ok := manifest.(T)
+		if ok && obj.GetName() == name && hostedLocation(obj) == location {
+			t.Fatalf("%T %q with hosted location %q should not be rendered", obj, name, location)
+		}
+	}
+}
+
+func hostedLocation(obj metav1.Object) string {
+	return obj.GetAnnotations()[addonv1beta1.HostedManifestLocationAnnotationKey]
+}
+
+func testProvisionerSourceRBACName(installNamespace string) string {
+	return fmt.Sprintf("managed-serviceaccount-kubeconfig-provisioner-source-%s", installNamespace)
+}
+
+func assertRule(t *testing.T, rules []rbacv1.PolicyRule, apiGroups, resources, verbs, resourceNames []string) {
+	t.Helper()
+
+	assert.Contains(t, rules, rbacv1.PolicyRule{
+		APIGroups:     apiGroups,
+		Resources:     resources,
+		Verbs:         verbs,
+		ResourceNames: resourceNames,
+	})
+}
+
+func assertRoleBindingBinds(t *testing.T, binding *rbacv1.RoleBinding, roleName, subjectName, subjectNamespace string) {
+	t.Helper()
+
+	assert.Equal(t, "Role", binding.RoleRef.Kind)
+	assert.Equal(t, roleName, binding.RoleRef.Name)
+	assert.Len(t, binding.Subjects, 1)
+	assert.Equal(t, "ServiceAccount", binding.Subjects[0].Kind)
+	assert.Equal(t, subjectName, binding.Subjects[0].Name)
+	assert.Equal(t, subjectNamespace, binding.Subjects[0].Namespace)
+}
+
+func findNamespaces(manifests []runtime.Object) []*corev1.Namespace {
+	namespaces := []*corev1.Namespace{}
+	for _, manifest := range manifests {
+		namespace, ok := manifest.(*corev1.Namespace)
+		if ok {
+			namespaces = append(namespaces, namespace)
+		}
+	}
+	return namespaces
+}
+
+func assertDeploymentSecretVolume(t *testing.T, deployment *appsv1.Deployment, volumeName, secretName string) {
+	t.Helper()
+
+	for _, volume := range deployment.Spec.Template.Spec.Volumes {
+		if volume.Name != volumeName {
+			continue
+		}
+		if assert.NotNil(t, volume.Secret, "volume %q should use a secret", volumeName) {
+			assert.Equal(t, secretName, volume.Secret.SecretName)
+		}
+		return
+	}
+	t.Fatalf("volume %q not found", volumeName)
+}
+
+func assertDeploymentMissingVolume(t *testing.T, deployment *appsv1.Deployment, volumeName string) {
+	t.Helper()
+
+	for _, volume := range deployment.Spec.Template.Spec.Volumes {
+		if volume.Name == volumeName {
+			t.Fatalf("volume %q should not be rendered", volumeName)
+		}
+	}
+}
+
+func assertDeploymentVolumeMount(t *testing.T, deployment *appsv1.Deployment, volumeName, mountPath string) {
+	t.Helper()
+
+	if !assert.NotEmpty(t, deployment.Spec.Template.Spec.Containers, "expected at least one container") {
+		return
+	}
+	for _, mount := range deployment.Spec.Template.Spec.Containers[0].VolumeMounts {
+		if mount.Name == volumeName {
+			assert.Equal(t, mountPath, mount.MountPath)
+			assert.True(t, mount.ReadOnly)
+			return
+		}
+	}
+	t.Fatalf("volume mount %q not found", volumeName)
+}
+
 func newTestImagePullSecret() *corev1.Secret {
 	return &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
@@ -684,6 +1505,15 @@ func newTestCluster(name string) *clusterv1.ManagedCluster {
 			Name: name,
 		},
 	}
+}
+
+func newTestHostedAddOn(name, namespace, hostingClusterName string) *addonv1beta1.ManagedClusterAddOn {
+	addon := newTestAddOn(name, namespace)
+	addon.Annotations = map[string]string{
+		addonv1beta1.HostingClusterNameAnnotationKey: hostingClusterName,
+		addonv1beta1.InstallNamespaceAnnotation:      name,
+	}
+	return addon
 }
 
 func newTestAddOn(name, namespace string) *addonv1beta1.ManagedClusterAddOn {

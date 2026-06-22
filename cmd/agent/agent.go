@@ -3,7 +3,7 @@ package agent
 import (
 	"context"
 	"crypto/tls"
-	"flag"
+	"fmt"
 	"net/http"
 	"os"
 	"strings"
@@ -15,6 +15,7 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/kubernetes"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
@@ -27,6 +28,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
+	addonconstants "open-cluster-management.io/addon-framework/pkg/addonmanager/constants"
+	addonlease "open-cluster-management.io/addon-framework/pkg/lease"
 	addonutils "open-cluster-management.io/addon-framework/pkg/utils"
 	authv1beta1 "open-cluster-management.io/managed-serviceaccount/apis/authentication/v1beta1"
 	"open-cluster-management.io/managed-serviceaccount/pkg/addon/agent/controller"
@@ -36,6 +39,8 @@ import (
 	"open-cluster-management.io/managed-serviceaccount/pkg/features"
 	"open-cluster-management.io/managed-serviceaccount/pkg/util"
 )
+
+const managedHealthRequestTimeout = 30 * time.Second
 
 var (
 	scheme = runtime.NewScheme()
@@ -72,6 +77,8 @@ func (o *AgentOptions) AddFlags(flags *pflag.FlagSet) {
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
 	flags.StringVar(&o.ClusterName, "cluster-name", "", "The name of the managed cluster.")
+	flags.StringVar(&o.InstallMode, "install-mode", addonconstants.InstallModeDefault,
+		"The install mode of the addon agent. Options are Default and Hosted.")
 	flags.StringVar(&o.SpokeKubeconfig, "spoke-kubeconfig", "", "The kubeconfig to talk to the managed cluster, "+
 		"will use the in-cluster client if not specified.")
 	flags.Var(
@@ -89,6 +96,7 @@ type AgentOptions struct {
 	ProbeAddr            string
 	FeatureGatesFlags    map[string]bool
 	ClusterName          string
+	InstallMode          string
 	SpokeKubeconfig      string
 	LeaseHealthCheck     bool
 }
@@ -101,8 +109,11 @@ func NewAgentOptions() *AgentOptions {
 func (o *AgentOptions) Run() error {
 	logger := klog.Background()
 	klog.SetOutput(os.Stdout)
-	klog.InitFlags(flag.CommandLine)
 	ctrl.SetLogger(logger)
+
+	if err := o.validateInstallMode(); err != nil {
+		return err
+	}
 
 	err := features.FeatureGates.SetFromMap(o.FeatureGatesFlags)
 	if err != nil {
@@ -228,7 +239,27 @@ func (o *AgentOptions) Run() error {
 	defer cancel()
 
 	if o.LeaseHealthCheck {
-		leaseUpdater, err := health.NewAddonHealthUpdater(mgr.GetConfig(), o.ClusterName, spokeCfg, spokeNamespace)
+		leaseCfg, err := leaseClientConfig(o.InstallMode, spokeCfg, rest.InClusterConfig)
+		if err != nil {
+			klog.Fatalf("failed to build a lease client config: %v", err)
+		}
+		var healthChecks []func() bool
+		if healthCfg := managedHealthClientConfig(o.InstallMode, spokeCfg); healthCfg != nil {
+			managedDiscovery, err := discovery.NewDiscoveryClientForConfig(healthCfg)
+			if err != nil {
+				klog.Fatalf("failed to build managed cluster health client: %v", err)
+			}
+			healthChecks = leaseHealthCheckFuncs(o.InstallMode, managedDiscovery)
+		}
+		// spokeNamespace doubles as the agent pod's own namespace, which is
+		// where the lease lives on whichever cluster leaseCfg points at.
+		leaseUpdater, err := health.NewAddonHealthUpdater(
+			mgr.GetConfig(),
+			o.ClusterName,
+			leaseCfg,
+			spokeNamespace,
+			healthChecks...,
+		)
 		if err != nil {
 			klog.Fatalf("unable to create healthiness lease updater for controller %v", "ManagedServiceAccount")
 		}
@@ -252,12 +283,53 @@ func (o *AgentOptions) Run() error {
 	return nil
 }
 
+func managedHealthClientConfig(installMode string, spokeCfg *rest.Config) *rest.Config {
+	if installMode != addonconstants.InstallModeHosted {
+		return nil
+	}
+	managedHealthCfg := rest.CopyConfig(spokeCfg)
+	managedHealthCfg.Timeout = managedHealthRequestTimeout
+	return managedHealthCfg
+}
+
+func leaseHealthCheckFuncs(installMode string, managedDiscovery discovery.DiscoveryInterface) []func() bool {
+	if installMode != addonconstants.InstallModeHosted {
+		return nil
+	}
+	return []func() bool{addonlease.CheckManagedClusterHealthFunc(managedDiscovery)}
+}
+
+func (o *AgentOptions) validateInstallMode() error {
+	switch o.InstallMode {
+	case addonconstants.InstallModeDefault:
+		return nil
+	case addonconstants.InstallModeHosted:
+		if len(o.SpokeKubeconfig) == 0 {
+			return fmt.Errorf("--spoke-kubeconfig is required when --install-mode=%s", addonconstants.InstallModeHosted)
+		}
+		return nil
+	default:
+		return fmt.Errorf("unsupported --install-mode %q, must be %q or %q",
+			o.InstallMode, addonconstants.InstallModeDefault, addonconstants.InstallModeHosted)
+	}
+}
+
 func (o *AgentOptions) configCheckerPaths() []string {
 	paths := []string{getHubKubeconfigPath()}
 	if len(o.SpokeKubeconfig) > 0 {
 		paths = append(paths, o.SpokeKubeconfig)
 	}
 	return paths
+}
+
+// leaseClientConfig returns the client config for the cluster holding the
+// addon health lease: the cluster the agent runs on in Hosted mode, the spoke
+// cluster otherwise.
+func leaseClientConfig(installMode string, spokeCfg *rest.Config, inClusterConfig func() (*rest.Config, error)) (*rest.Config, error) {
+	if installMode == addonconstants.InstallModeHosted {
+		return inClusterConfig()
+	}
+	return spokeCfg, nil
 }
 
 // serveHealthProbes serves health probes and configchecker.

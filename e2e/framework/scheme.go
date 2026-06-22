@@ -8,6 +8,7 @@ import (
 
 	addonv1beta1 "open-cluster-management.io/api/addon/v1beta1"
 	clusterv1 "open-cluster-management.io/api/cluster/v1"
+	workv1 "open-cluster-management.io/api/work/v1"
 	authv1beta1 "open-cluster-management.io/managed-serviceaccount/apis/authentication/v1beta1"
 )
 
@@ -16,6 +17,7 @@ var scheme = runtime.NewScheme()
 func init() {
 	utilruntime.Must(clusterv1.Install(scheme))
 	utilruntime.Must(addonv1beta1.Install(scheme))
+	utilruntime.Must(workv1.Install(scheme))
 	utilruntime.Must(k8sscheme.AddToScheme(scheme))
 	utilruntime.Must(authv1beta1.AddToScheme(scheme))
 	utilruntime.Must(cpv1alpha1.AddToScheme(scheme))
