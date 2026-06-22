@@ -20,7 +20,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
-	addonv1alpha1 "open-cluster-management.io/api/addon/v1alpha1"
+	addonv1beta1 "open-cluster-management.io/api/addon/v1beta1"
 	clusterv1 "open-cluster-management.io/api/cluster/v1"
 	"open-cluster-management.io/managed-serviceaccount/e2e/framework"
 	"open-cluster-management.io/managed-serviceaccount/pkg/common"
@@ -44,6 +44,7 @@ var _ = Describe("Addon Installation Test", Label("install"),
 
 		It("Addon can be configured with AddOnDeploymentConfig", func() {
 			deployConfigName := "tolerations-deploy-config"
+			agentInstallNamespace := "managed-serviceaccount-config-test"
 			nodeSelector := map[string]string{"kubernetes.io/os": "linux"}
 			tolerations := []corev1.Toleration{{Key: "node-role.kubernetes.io/infra", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoSchedule}}
 
@@ -72,23 +73,22 @@ var _ = Describe("Addon Installation Test", Label("install"),
 				})
 			})
 
+			deployConfig := &addonv1beta1.AddOnDeploymentConfig{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      deployConfigName,
+					Namespace: f.TestClusterName(),
+				},
+			}
 			By("Prepare a AddOnDeploymentConfig for managed-serviceaccount addon")
 			Eventually(func() error {
-				deployConfigSpec := addonv1alpha1.AddOnDeploymentConfigSpec{
-					NodePlacement: &addonv1alpha1.NodePlacement{
-						NodeSelector: nodeSelector,
-						Tolerations:  tolerations,
-					},
-				}
-
-				deployConfig := &addonv1alpha1.AddOnDeploymentConfig{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      deployConfigName,
-						Namespace: f.TestClusterName(),
-					},
-				}
 				_, err := controllerutil.CreateOrUpdate(context.TODO(), c, deployConfig, func() error {
-					deployConfig.Spec = deployConfigSpec
+					deployConfig.Spec = addonv1beta1.AddOnDeploymentConfigSpec{
+						AgentInstallNamespace: agentInstallNamespace,
+						NodePlacement: &addonv1beta1.NodePlacement{
+							NodeSelector: nodeSelector,
+							Tolerations:  tolerations,
+						},
+					}
 					return nil
 				})
 				return err
@@ -99,7 +99,7 @@ var _ = Describe("Addon Installation Test", Label("install"),
 				return setManagedClusterAddonConfigs(
 					c,
 					f.TestClusterName(),
-					[]addonv1alpha1.AddOnConfig{addonDeploymentConfigReference(f.TestClusterName(), deployConfigName)},
+					[]addonv1beta1.AddOnConfig{addonDeploymentConfigReference(f.TestClusterName(), deployConfigName)},
 				)
 			}).WithTimeout(installWaitTimeout).ShouldNot(HaveOccurred())
 
@@ -109,21 +109,44 @@ var _ = Describe("Addon Installation Test", Label("install"),
 				if err != nil {
 					return err
 				}
-
-				for _, ref := range addon.Status.ConfigReferences {
-					if ref.Group == addonDeploymentConfigGroup &&
-						ref.Resource == addonDeploymentConfigResource &&
-						ref.Namespace == f.TestClusterName() &&
-						ref.Name == deployConfigName {
-						return nil
-					}
+				if len(addon.Status.ConfigReferences) == 0 {
+					return fmt.Errorf("no config references in addon status")
 				}
 
-				return fmt.Errorf("expected config reference %s/%s not found in %v", f.TestClusterName(), deployConfigName, addon.Status.ConfigReferences)
+				found := false
+				for _, ref := range addon.Status.ConfigReferences {
+					if ref.Resource != addonDeploymentConfigResource || ref.Group != addonDeploymentConfigGroup {
+						continue
+					}
+					if ref.DesiredConfig == nil ||
+						ref.DesiredConfig.Name != deployConfigName ||
+						ref.DesiredConfig.Namespace != f.TestClusterName() {
+						return fmt.Errorf("unexpected config references %v", addon.Status.ConfigReferences)
+					}
+					if ref.DesiredConfig.SpecHash == "" {
+						return fmt.Errorf("desired config spec hash is empty in config references %v", addon.Status.ConfigReferences)
+					}
+					if ref.LastObservedGeneration != deployConfig.Generation {
+						return fmt.Errorf("last observed generation = %d, expected %d (config references %v)",
+							ref.LastObservedGeneration, deployConfig.Generation, addon.Status.ConfigReferences)
+					}
+					found = true
+				}
+				if !found {
+					return fmt.Errorf("no matching config reference for %s/%s in %v",
+						f.TestClusterName(), deployConfigName, addon.Status.ConfigReferences)
+				}
+				if !meta.IsStatusConditionTrue(addon.Status.Conditions, addonv1beta1.ManagedClusterAddOnConditionConfigured) {
+					return fmt.Errorf("addon is not configured: %v", addon.Status.Conditions)
+				}
+				if addon.Status.Namespace != agentInstallNamespace {
+					return fmt.Errorf("addon is installed in %q, want %q", addon.Status.Namespace, agentInstallNamespace)
+				}
+				return nil
 			}).WithTimeout(installWaitTimeout).ShouldNot(HaveOccurred())
 
 			By("Ensure the managed serviceaccount addon agent is configured")
-			waitAgentDeploymentRolledOut(f, addonInstallNamespace, func(deploy *appsv1.Deployment) error {
+			waitAgentDeploymentRolledOut(f, agentInstallNamespace, func(deploy *appsv1.Deployment) error {
 				return expectAgentPlacement(deploy, nodeSelector, tolerations)
 			})
 
@@ -162,8 +185,8 @@ var _ = Describe("Addon Installation Test", Label("install"),
 			})
 
 			By("Prepare cluster annotation for addon image override config")
-			overrideRegistries := addonv1alpha1.AddOnDeploymentConfigSpec{
-				Registries: []addonv1alpha1.ImageMirror{
+			overrideRegistries := addonv1beta1.AddOnDeploymentConfigSpec{
+				Registries: []addonv1beta1.ImageMirror{
 					{
 						Source: "quay.io/open-cluster-management",
 						Mirror: "quay.io/ocm",
@@ -193,8 +216,8 @@ var _ = Describe("Addon Installation Test", Label("install"),
 
 	})
 
-func getManagedClusterAddon(c client.Client, clusterName string) (*addonv1alpha1.ManagedClusterAddOn, error) {
-	addon := &addonv1alpha1.ManagedClusterAddOn{}
+func getManagedClusterAddon(c client.Client, clusterName string) (*addonv1beta1.ManagedClusterAddOn, error) {
+	addon := &addonv1beta1.ManagedClusterAddOn{}
 	err := c.Get(context.TODO(), types.NamespacedName{
 		Namespace: clusterName,
 		Name:      common.AddonName,
@@ -208,14 +231,14 @@ func waitManagedClusterAddonAvailable(f framework.Framework) {
 		if err != nil {
 			return err
 		}
-		if !meta.IsStatusConditionTrue(addon.Status.Conditions, addonv1alpha1.ManagedClusterAddOnConditionAvailable) {
+		if !meta.IsStatusConditionTrue(addon.Status.Conditions, addonv1beta1.ManagedClusterAddOnConditionAvailable) {
 			return fmt.Errorf("addon is unavailable: %v", addon.Status.Conditions)
 		}
 		return nil
 	}).WithTimeout(installWaitTimeout).Should(Succeed())
 }
 
-func setManagedClusterAddonConfigs(c client.Client, clusterName string, configs []addonv1alpha1.AddOnConfig) error {
+func setManagedClusterAddonConfigs(c client.Client, clusterName string, configs []addonv1beta1.AddOnConfig) error {
 	addon, err := getManagedClusterAddon(c, clusterName)
 	if err != nil {
 		return err
@@ -224,13 +247,13 @@ func setManagedClusterAddonConfigs(c client.Client, clusterName string, configs 
 	return c.Update(context.TODO(), addon)
 }
 
-func addonDeploymentConfigReference(namespace, name string) addonv1alpha1.AddOnConfig {
-	return addonv1alpha1.AddOnConfig{
-		ConfigGroupResource: addonv1alpha1.ConfigGroupResource{
+func addonDeploymentConfigReference(namespace, name string) addonv1beta1.AddOnConfig {
+	return addonv1beta1.AddOnConfig{
+		ConfigGroupResource: addonv1beta1.ConfigGroupResource{
 			Group:    addonDeploymentConfigGroup,
 			Resource: addonDeploymentConfigResource,
 		},
-		ConfigReferent: addonv1alpha1.ConfigReferent{
+		ConfigReferent: addonv1beta1.ConfigReferent{
 			Namespace: namespace,
 			Name:      name,
 		},
@@ -238,7 +261,7 @@ func addonDeploymentConfigReference(namespace, name string) addonv1alpha1.AddOnC
 }
 
 func deleteAddOnDeploymentConfig(c client.Client, namespace, name string) error {
-	return client.IgnoreNotFound(c.Delete(context.TODO(), &addonv1alpha1.AddOnDeploymentConfig{
+	return client.IgnoreNotFound(c.Delete(context.TODO(), &addonv1beta1.AddOnDeploymentConfig{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: namespace,
 			Name:      name,

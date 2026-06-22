@@ -1,4 +1,4 @@
-{{- if and .Values.prometheus.enabled (include "managed-serviceaccount.hubManager.enabled" .) }}
+{{- if .Values.prometheus.enabled }}
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
