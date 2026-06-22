@@ -1,0 +1,14 @@
+{{- if eq .Values.installMode "Hosted" }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "managed-serviceaccount-agent.provisionerSourceRBACName" . }}
+  namespace: {{ include "managed-serviceaccount-agent.externalManagedKubeConfigNamespace" . | quote }}
+  annotations:
+    addon.open-cluster-management.io/hosted-manifest-location: hosting
+rules:
+- apiGroups: [""]
+  resources: ["secrets"]
+  resourceNames: [{{ .Values.externalManagedKubeConfigSecret | quote }}]
+  verbs: ["get"]
+{{- end }}

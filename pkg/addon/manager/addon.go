@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"strings"
+	"time"
 
 	certificatesv1 "k8s.io/api/certificates/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -15,6 +17,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/client-go/kubernetes"
 
 	"open-cluster-management.io/addon-framework/pkg/addonfactory"
@@ -22,6 +25,7 @@ import (
 	addonutils "open-cluster-management.io/addon-framework/pkg/utils"
 	addonv1beta1 "open-cluster-management.io/api/addon/v1beta1"
 	clusterv1 "open-cluster-management.io/api/cluster/v1"
+	"open-cluster-management.io/managed-serviceaccount/pkg/addon/provisioner"
 	"open-cluster-management.io/managed-serviceaccount/pkg/common"
 )
 
@@ -33,6 +37,15 @@ var FS embed.FS
 const (
 	prometheusEnabledVariableName              = "prometheusEnabled"
 	prometheusServiceMonitorLabelsVariableName = "prometheusServiceMonitorLabels"
+
+	externalManagedKubeConfigNamespaceVariableName       = "externalManagedKubeConfigNamespace"
+	externalManagedKubeConfigSecretVariableName          = "externalManagedKubeConfigSecret"
+	managedServiceAccountNameVariableName                = "managedServiceAccountName"
+	hubKubeConfigSecretVariableName                      = "hubKubeConfigSecret"
+	managedKubeConfigSecretVariableName                  = "managedKubeConfigSecret"
+	managedKubeConfigTokenExpirationSecondsVariableName  = "managedKubeConfigTokenExpirationSeconds"
+	managedKubeConfigRefreshBeforeVariableName           = "managedKubeConfigRefreshBefore"
+	managedKubeConfigProvisionerSyncIntervalVariableName = "managedKubeConfigProvisionerSyncInterval"
 )
 
 type prometheusValues struct {
@@ -61,6 +74,9 @@ func GetDefaultValues(image string, imagePullSecret *corev1.Secret, enableNetwor
 	return func(_ *clusterv1.ManagedCluster, _ *addonv1beta1.ManagedClusterAddOn) (addonfactory.Values, error) {
 		values := addonfactory.Values{
 			"Image": image,
+			"managedKubeConfigTokenExpirationSeconds":  provisioner.DefaultTokenExpirationSeconds,
+			"managedKubeConfigRefreshBefore":           provisioner.DefaultRefreshBefore.String(),
+			"managedKubeConfigProvisionerSyncInterval": provisioner.DefaultSyncInterval.String(),
 			"networkPolicies": map[string]interface{}{
 				"enabled": enableNetworkPolicies,
 			},
@@ -107,6 +123,60 @@ func ToAddOnPrometheusValues(config addonv1beta1.AddOnDeploymentConfig) (addonfa
 	}
 
 	return addonfactory.Values{"Prometheus": addonfactory.StructToValues(prometheus)}, nil
+}
+
+// ValidateAddOnAgentVariables validates every customized variable the agent
+// chart expands into command-line arguments, serviceAccountName, volume
+// secretName, or RBAC resourceNames, so an invalid value (including an empty
+// one, which would override the chart default) fails at render time as an
+// addon condition instead of a crash-looping pod.
+func ValidateAddOnAgentVariables(config addonv1beta1.AddOnDeploymentConfig) (addonfactory.Values, error) {
+	tokenExpirationSeconds := provisioner.DefaultTokenExpirationSeconds
+	refreshBefore := provisioner.DefaultRefreshBefore
+	syncInterval := provisioner.DefaultSyncInterval
+
+	for _, variable := range config.Spec.CustomizedVariables {
+		var errs []string
+		switch variable.Name {
+		case externalManagedKubeConfigNamespaceVariableName:
+			// An empty namespace is valid: the chart's default helper falls
+			// back to the cluster name.
+			if len(variable.Value) > 0 {
+				errs = validation.IsDNS1123Label(variable.Value)
+			}
+		case externalManagedKubeConfigSecretVariableName, managedServiceAccountNameVariableName,
+			managedKubeConfigSecretVariableName:
+			errs = validation.IsDNS1123Subdomain(variable.Value)
+		case hubKubeConfigSecretVariableName:
+			return nil, fmt.Errorf(
+				"customizing %s is unsupported because addon registration always manages the default secret name",
+				hubKubeConfigSecretVariableName,
+			)
+		case managedKubeConfigRefreshBeforeVariableName, managedKubeConfigProvisionerSyncIntervalVariableName:
+			value, err := time.ParseDuration(variable.Value)
+			if err != nil {
+				return nil, fmt.Errorf("invalid %s: %w", variable.Name, err)
+			}
+			if variable.Name == managedKubeConfigRefreshBeforeVariableName {
+				refreshBefore = value
+			} else {
+				syncInterval = value
+			}
+		case managedKubeConfigTokenExpirationSecondsVariableName:
+			value, err := strconv.ParseInt(variable.Value, 10, 64)
+			if err != nil {
+				return nil, fmt.Errorf("invalid %s: %w", variable.Name, err)
+			}
+			tokenExpirationSeconds = value
+		}
+		if len(errs) > 0 {
+			return nil, fmt.Errorf("invalid %s %q: %s", variable.Name, variable.Value, strings.Join(errs, ", "))
+		}
+	}
+	if err := provisioner.ValidateRotationSettings(tokenExpirationSeconds, refreshBefore, syncInterval); err != nil {
+		return nil, fmt.Errorf("invalid managed kubeconfig rotation settings: %w", err)
+	}
+	return nil, nil
 }
 
 func NewRegistrationOption(nativeClient kubernetes.Interface) *agent.RegistrationOption {

@@ -13,9 +13,11 @@ rules:
 - apiGroups: [""]
   resources: ["serviceaccounts", "serviceaccounts/token"]
   verbs: ["get", "watch", "list", "create", "delete"]
+{{- if ne .Values.installMode "Hosted" }}
 - apiGroups: ["coordination.k8s.io"]
   resources: ["leases"]
   verbs: ["get", "create", "update", "patch"]
+{{- end }}
 - apiGroups: ["authentication.k8s.io"]
   resources: ["tokenrequests"]
   verbs: ["get", "create", "update", "patch"]

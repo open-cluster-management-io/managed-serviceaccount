@@ -12,16 +12,18 @@ import (
 func NewAddonHealthUpdater(
 	hubClientCfg *rest.Config,
 	clusterName string,
-	spokeClientCfg *rest.Config,
-	spokeNamespace string,
+	leaseClientCfg *rest.Config,
+	leaseNamespace string,
+	healthCheckFuncs ...func() bool,
 ) (lease.LeaseUpdater, error) {
-	spokeClient, err := kubernetes.NewForConfig(spokeClientCfg)
+	leaseClient, err := kubernetes.NewForConfig(leaseClientCfg)
 	if err != nil {
 		return nil, err
 	}
 	return lease.NewLeaseUpdater(
-		spokeClient,
+		leaseClient,
 		common.AddonName,
-		spokeNamespace,
+		leaseNamespace,
+		healthCheckFuncs...,
 	).WithHubLeaseConfig(hubClientCfg, clusterName), nil
 }

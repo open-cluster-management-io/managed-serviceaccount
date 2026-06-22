@@ -50,7 +50,10 @@ addon-framework default namespace `open-cluster-management-agent-addon` unless a
 ### Hub Manager Deployment
 
 `hubDeployMode=Deployment` installs the hub addon manager. The manager renders
-the embedded agent chart for each managed cluster through addon-framework.
+the embedded agent chart for each managed cluster through addon-framework. This
+is the only deployment mode that supports placing an agent on a hosting cluster.
+See [Running the agent on a hosting cluster](../../README.md#running-the-agent-on-a-hosting-cluster)
+for its prerequisites and per-cluster configuration.
 
 ```bash
 helm install managed-serviceaccount ./charts/managed-serviceaccount \
@@ -73,7 +76,8 @@ helm install managed-serviceaccount ./charts/managed-serviceaccount \
 
 `hubDeployMode=AddOnTemplate` renders an `AddOnTemplate` and the hub RBAC needed
 by addon-manager. When `featureGates.clusterProfile=true`, the chart also renders
-the hub manager so ClusterProfile credential sync can run.
+the hub manager so ClusterProfile credential sync can run. It cannot place an
+agent on a hosting cluster; use `hubDeployMode=Deployment` for a hosted agent.
 
 ```bash
 helm install managed-serviceaccount ./charts/managed-serviceaccount \

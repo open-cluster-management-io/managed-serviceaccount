@@ -1,0 +1,36 @@
+{{- if and (eq .Values.installMode "Hosted") .Values.networkPolicies.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "managed-serviceaccount-agent.provisionerName" . }}-network-policy
+  namespace: {{ .Values.addonInstallNamespace }}
+  annotations:
+    addon.open-cluster-management.io/hosted-manifest-location: hosting
+  labels:
+    addon-agent: {{ include "managed-serviceaccount-agent.provisionerName" . }}
+spec:
+  podSelector:
+    matchLabels:
+      addon-agent: {{ include "managed-serviceaccount-agent.provisionerName" . }}
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress: []
+  egress:
+  # DNS (:53 common; :5353 used by some distributions)
+  - ports:
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 53
+    - protocol: UDP
+      port: 5353
+    - protocol: TCP
+      port: 5353
+  # Hosting and managed-cluster Kubernetes APIs
+  - ports:
+    - protocol: TCP
+      port: 443
+    - protocol: TCP
+      port: 6443
+{{- end }}

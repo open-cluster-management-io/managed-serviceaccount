@@ -4,6 +4,12 @@ kind: Deployment
 metadata:
   name: managed-serviceaccount-addon-agent
   namespace: {{ .Values.addonInstallNamespace }}
+  labels:
+    addon-agent: managed-serviceaccount
+{{- if eq .Values.installMode "Hosted" }}
+  annotations:
+    addon.open-cluster-management.io/hosted-manifest-location: hosting
+{{- end }}
 spec:
   replicas: 1
   selector:
@@ -14,7 +20,11 @@ spec:
       labels:
         addon-agent: managed-serviceaccount
     spec:
-      serviceAccountName: managed-serviceaccount
+{{- if eq .Values.installMode "Hosted" }}
+      serviceAccountName: {{ include "managed-serviceaccount-agent.hostingAgentServiceAccountName" . }}
+{{- else }}
+      serviceAccountName: {{ .Values.managedServiceAccountName | quote }}
+{{- end }}
       securityContext:
         runAsNonRoot: true
         seccompProfile:
@@ -38,10 +48,16 @@ spec:
           command:
             - /msa
             - agent
+          # Quote every templated argument so a value can never smuggle
+          # additional arguments into this container.
           args:
             - --leader-elect=false
-            - --cluster-name={{ .Values.clusterName }}
+            - {{ printf "--cluster-name=%v" .Values.clusterName | quote }}
+            - {{ printf "--install-mode=%v" .Values.installMode | quote }}
             - --kubeconfig=/etc/hub/kubeconfig
+{{- if eq .Values.installMode "Hosted" }}
+            - --spoke-kubeconfig=/etc/managed/kubeconfig
+{{- end }}
             - --lease-health-check=true
           ports:
             - name: metrics
@@ -51,6 +67,11 @@ spec:
             - name: hub-kubeconfig
               mountPath: /etc/hub/
               readOnly: true
+{{- if eq .Values.installMode "Hosted" }}
+            - name: managed-kubeconfig
+              mountPath: /etc/managed/
+              readOnly: true
+{{- end }}
           livenessProbe:
             httpGet:
               path: /healthz
@@ -60,7 +81,12 @@ spec:
       volumes:
         - name: hub-kubeconfig
           secret:
-            secretName: {{ .Values.hubKubeConfigSecret }}
+            secretName: {{ .Values.hubKubeConfigSecret | quote }}
+{{- if eq .Values.installMode "Hosted" }}
+        - name: managed-kubeconfig
+          secret:
+            secretName: {{ .Values.managedKubeConfigSecret | quote }}
+{{- end }}
 {{- if .Values.imagePullSecretData }}
       imagePullSecrets:
       - name: open-cluster-management-image-pull-credentials

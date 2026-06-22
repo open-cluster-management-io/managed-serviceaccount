@@ -126,6 +126,18 @@ jobs:
   e2e:
     name: e2e
     runs-on: ubuntu-latest
+    # Leaves headroom over the suite and environment-setup step timeouts, so a
+    # step timeout fails the step instead of the job timeout cancelling the
+    # if-failure diagnostics dump.
+    timeout-minutes: 150
+    # Topology of the hosting-cluster phase, shared by hack/e2e/setup-hosted.sh,
+    # the hosted suite and hack/e2e/dump.sh. The scripts keep their own defaults
+    # so they still run standalone.
+    env:
+      KUBECONFIG_DIR: ${{ github.workspace }}/_output/e2e/kubeconfigs
+      HOSTING_CLUSTER_NAME: hosting
+      SPOKE_CLUSTER_NAME: spoke
+      HOSTED_INSTALL_NAMESPACE: msa-spoke
     steps:
       - name: checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -166,18 +178,57 @@ jobs:
              --set tag=latest \
              --set featureGates.ephemeralIdentity=true \
              --set featureGates.clusterProfile=true
-      - name: Run e2e test
-        run: make test-e2e
+      # Run the full e2e suite once for each supported agent placement.
+      # Step-level timeouts keep a hung suite a step failure; a job-level
+      # timeout cancels the job and skips the if-failure diagnostics dump.
+      - name: Run e2e with agent on managed cluster
+        id: e2e-managed-cluster-agent
+        continue-on-error: true
+        timeout-minutes: 35
+        run: |
+          make test-e2e GENKGO_ARGS='--ginkgo.junit-report=_output/e2e/reports/e2e-managed-cluster-agent.xml'
+          make test-e2e-cleanup GENKGO_ARGS='--ginkgo.junit-report=_output/e2e/reports/e2e-managed-cluster-agent-cleanup.xml'
+      - name: Prepare hosting-cluster e2e environment
+        timeout-minutes: 20
+        run: bash hack/e2e/setup-hosted.sh
+      - name: Run e2e with agent on hosting cluster
+        id: e2e-hosted-agent
+        continue-on-error: true
+        timeout-minutes: 45
+        env:
+          E2E_TEST_CLUSTER_NAME: ${{ env.SPOKE_CLUSTER_NAME }}
+          HUB_KUBECONFIG: ${{ env.KUBECONFIG_DIR }}/hub.kubeconfig
+          SPOKE_KUBECONFIG: ${{ env.KUBECONFIG_DIR }}/${{ env.SPOKE_CLUSTER_NAME }}.kubeconfig
+          AGENT_KUBECONFIG: ${{ env.KUBECONFIG_DIR }}/${{ env.HOSTING_CLUSTER_NAME }}.kubeconfig
+        run: |
+          # deployment-install re-rolls the agent twice on a 2m budget sized
+          # for the managed-cluster phase; the hosted rollout path needs more,
+          # so skip it in this phase.
+          make test-e2e-hosted GENKGO_ARGS='--ginkgo.label-filter='\''!deployment-install'\'' --ginkgo.junit-report=_output/e2e/reports/e2e-hosted-agent.xml'
+          make test-e2e-cleanup-hosted GENKGO_ARGS='--ginkgo.junit-report=_output/e2e/reports/e2e-hosted-agent-cleanup.xml'
+      - name: Upload e2e reports
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: e2e-reports
+          path: _output/e2e/reports/*.xml
+          if-no-files-found: ignore
+      # Both e2e steps are continue-on-error so that every suite gets to report,
+      # so this step is what turns a suite failure into a job failure.
+      - name: Report e2e result
+        if: always()
+        env:
+          MANAGED_CLUSTER_AGENT_OUTCOME: ${{ steps.e2e-managed-cluster-agent.outcome }}
+          HOSTED_AGENT_OUTCOME: ${{ steps.e2e-hosted-agent.outcome }}
+        run: |
+          if [[ "$MANAGED_CLUSTER_AGENT_OUTCOME" != success ||
+                "$HOSTED_AGENT_OUTCOME" != success ]]; then
+            echo "e2e failed: managed-cluster-agent=$MANAGED_CLUSTER_AGENT_OUTCOME hosted-agent=$HOSTED_AGENT_OUTCOME" >&2
+            exit 1
+          fi
       - name: Dump e2e diagnostics
         if: failure()
-        run: |
-          kubectl get clustermanagementaddon managed-serviceaccount -o yaml || true
-          kubectl get managedclusteraddon -A -o yaml || true
-          kubectl get addondeploymentconfig -A -o yaml || true
-          kubectl get manifestwork -A -o yaml || true
-          kubectl get deploy,po,sa,role,rolebinding -A | grep -E 'managed-serviceaccount|open-cluster-management-agent-addon|open-cluster-management-addon' || true
-          kubectl get pod -A | grep -i addon || true
-          kubectl -n open-cluster-management-addon logs deploy/managed-serviceaccount-addon-manager --all-containers --tail=-1 || true
+        run: bash hack/e2e/dump.sh
 
   e2e-addon-template:
     name: e2e-addon-template
