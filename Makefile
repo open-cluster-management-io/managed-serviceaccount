@@ -80,14 +80,6 @@ test-helm: ## Lint and render Helm chart.
 		--namespace open-cluster-management-addon \
 		--set featureGates.ephemeralIdentity=true \
 		--set featureGates.clusterProfile=true >/dev/null
-	$(HELM) template managed-serviceaccount charts/managed-serviceaccount \
-		--namespace open-cluster-management-addon \
-		--set hubDeployMode=AddOnTemplate >/dev/null
-	$(HELM) template managed-serviceaccount charts/managed-serviceaccount \
-		--namespace open-cluster-management-addon \
-		--set hubDeployMode=AddOnTemplate \
-		--set featureGates.ephemeralIdentity=true \
-		--set featureGates.clusterProfile=true >/dev/null
 
 ##@ Build
 

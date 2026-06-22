@@ -1,7 +1,19 @@
-apiVersion: addon.open-cluster-management.io/v1alpha1
+apiVersion: addon.open-cluster-management.io/v1beta1
+kind: AddOnDeploymentConfig
+metadata:
+  name: managed-serviceaccount
+  namespace: loopback
+spec:
+  agentInstallNamespace: open-cluster-management-agent-addon
+---
+apiVersion: addon.open-cluster-management.io/v1beta1
 kind: ManagedClusterAddOn
 metadata:
   name: managed-serviceaccount
   namespace: loopback
 spec:
-  installNamespace: open-cluster-management-agent-addon
+  configs:
+  - group: addon.open-cluster-management.io
+    resource: addondeploymentconfigs
+    namespace: loopback
+    name: managed-serviceaccount

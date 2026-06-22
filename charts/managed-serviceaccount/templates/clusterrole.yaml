@@ -1,4 +1,3 @@
-{{- if ne .Values.hubDeployMode "AddOnTemplate" }}
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -149,7 +148,6 @@ rules:
       - create
       - update
       - patch
-{{- end }}
 ---
 {{- if (.Values.featureGates | default dict).clusterProfile }}
 apiVersion: rbac.authorization.k8s.io/v1

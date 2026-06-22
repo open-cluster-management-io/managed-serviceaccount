@@ -1,4 +1,3 @@
-{{- if include "managed-serviceaccount.hubManager.enabled" . }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -36,7 +35,6 @@ spec:
             {{- if gt (int .Values.replicas) 1 }}
             - --leader-elect=true
             {{- end }}
-            - --deploy-mode={{ .Values.hubDeployMode }}
             - --metrics-bind-address=:38080
             - --agent-image-name={{ .Values.image }}:{{ .Values.tag | default (print "v" .Chart.Version) }}
             {{- if .Values.featureGates }}
@@ -49,4 +47,3 @@ spec:
             - name: metrics
               containerPort: 38080
               protocol: TCP
-{{- end }}
