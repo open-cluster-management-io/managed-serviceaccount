@@ -1,0 +1,59 @@
+{{- if eq .Values.installMode "Hosted" }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: managed-serviceaccount-kubeconfig-provisioner
+  namespace: {{ .Values.addonInstallNamespace }}
+  annotations:
+    addon.open-cluster-management.io/hosted-manifest-location: hosting
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      addon-agent: managed-serviceaccount-kubeconfig-provisioner
+  template:
+    metadata:
+      labels:
+        addon-agent: managed-serviceaccount-kubeconfig-provisioner
+    spec:
+      serviceAccountName: managed-serviceaccount-kubeconfig-provisioner
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+{{- if .Values.NodeSelector }}
+      nodeSelector: {{ toYaml .Values.NodeSelector | nindent 8 }}
+{{- end }}
+{{- if .Values.Tolerations }}
+      tolerations: {{ toYaml .Values.Tolerations | nindent 8 }}
+{{- end }}
+      containers:
+        - name: kubeconfig-provisioner
+          image: {{ include "managed-serviceaccount-common.agentImage" . }}
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+              - ALL
+          command:
+            - /msa
+            - managed-kubeconfig-provisioner
+          args:
+            - --cluster-name={{ .Values.clusterName }}
+            - --source-namespace={{ include "managed-serviceaccount-agent.externalManagedKubeConfigNamespace" . }}
+            - --source-secret={{ .Values.ExternalManagedKubeConfigSecret }}
+            - --target-namespace={{ .Values.addonInstallNamespace }}
+            - --target-secret={{ .Values.ManagedKubeConfigSecret }}
+            - --hub-kubeconfig-secret={{ .Values.hubKubeConfigSecret }}
+            - --managed-serviceaccount-namespace={{ .Values.addonInstallNamespace }}
+            - --managed-serviceaccount-name={{ .Values.ManagedServiceAccountName }}
+            - --token-expiration-seconds={{ .Values.ManagedKubeConfigTokenExpirationSeconds }}
+            - --refresh-before={{ .Values.ManagedKubeConfigRefreshBefore }}
+            - --sync-interval={{ .Values.ManagedKubeConfigProvisionerSyncInterval }}
+{{- if .Values.imagePullSecretData }}
+      imagePullSecrets:
+      - name: open-cluster-management-image-pull-credentials
+{{- end }}
+{{- end }}

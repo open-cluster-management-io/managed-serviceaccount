@@ -1,0 +1,17 @@
+{{- if eq .Values.installMode "Hosted" }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: managed-serviceaccount-health-lease
+  namespace: {{ .Values.addonInstallNamespace }}
+  annotations:
+    addon.open-cluster-management.io/hosted-manifest-location: hosting
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: managed-serviceaccount-health-lease
+subjects:
+- kind: ServiceAccount
+  name: managed-serviceaccount
+  namespace: {{ .Values.addonInstallNamespace }}
+{{- end }}

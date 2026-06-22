@@ -178,3 +178,127 @@ jobs:
           kubectl get deploy,po,sa,role,rolebinding -A | grep -E 'managed-serviceaccount|open-cluster-management-agent-addon|open-cluster-management-addon' || true
           kubectl get pod -A | grep -i addon || true
           kubectl -n open-cluster-management-addon logs deploy/managed-serviceaccount-addon-manager --all-containers --tail=-1 || true
+
+  e2e-hosted:
+    name: e2e-hosted
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout code
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - name: install Go
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: false
+      - name: Install clusteradm
+        run: |
+          make -C hack/tools clusteradm
+          echo "$PWD/hack/tools/bin" >> "$GITHUB_PATH"
+          hack/tools/bin/clusteradm version
+      - name: Create hub kind cluster
+        uses: helm/kind-action@ef37e7f390d99f746eb8b610417061a60e82a6cc # v1.14.0
+        with:
+          cluster_name: hub
+      - name: Create spoke kind cluster
+        uses: helm/kind-action@ef37e7f390d99f746eb8b610417061a60e82a6cc # v1.14.0
+        with:
+          cluster_name: spoke
+      - name: Create hosting kind cluster
+        uses: helm/kind-action@ef37e7f390d99f746eb8b610417061a60e82a6cc # v1.14.0
+        with:
+          cluster_name: hosting
+      - name: Resolve kind container DNS on the runner
+        run: |
+          # the --internal kubeconfigs point at <cluster>-control-plane:6443 (a cert SAN),
+          # so map each kind control-plane IP into /etc/hosts for the runner to resolve
+          for c in hub spoke hosting; do
+            ip=$(docker inspect -f '{{(index .NetworkSettings.Networks "kind").IPAddress}}' "${c}-control-plane")
+            echo "$ip ${c}-control-plane" | sudo tee -a /etc/hosts
+          done
+      - name: Export internal kubeconfigs
+        run: |
+          mkdir -p kubeconfigs
+          kind get kubeconfig --name hub     --internal > kubeconfigs/hub.kubeconfig
+          kind get kubeconfig --name spoke   --internal > kubeconfigs/spoke.kubeconfig
+          kind get kubeconfig --name hosting --internal > kubeconfigs/hosting.kubeconfig
+          spoke_ip=$(docker inspect -f '{{(index .NetworkSettings.Networks "kind").IPAddress}}' spoke-control-plane)
+          kubectl --kubeconfig=kubeconfigs/spoke.kubeconfig config set-cluster kind-spoke --server="https://${spoke_ip}:6443"
+      - name: Register spoke and hosting clusters with the hub
+        run: |
+          export KUBECONFIG=$PWD/kubeconfigs/hub.kubeconfig
+          clusteradm init --output-join-command-file join.sh --wait
+          KUBECONFIG=$PWD/kubeconfigs/hosting.kubeconfig sh -c "$(cat join.sh) hosting --force-internal-endpoint-lookup"
+          clusteradm accept --clusters hosting --wait 30
+          kubectl wait --for=condition=ManagedClusterConditionAvailable managedcluster/hosting --timeout=2m
+          KUBECONFIG=$PWD/kubeconfigs/hosting.kubeconfig sh -c "$(cat join.sh) spoke --mode hosted --managed-cluster-kubeconfig $PWD/kubeconfigs/spoke.kubeconfig --force-internal-endpoint-lookup"
+          clusteradm accept --clusters spoke --wait 30
+          kubectl wait --for=condition=ManagedClusterConditionAvailable managedcluster/spoke --timeout=2m
+      - name: Block hosted addon workloads from scheduling on the spoke
+        run: |
+          # taint the spoke so any accidental hosted workload placement stays Pending and fails the run
+          kubectl --kubeconfig=$PWD/kubeconfigs/spoke.kubeconfig wait --for=condition=Ready nodes --all --timeout=2m
+          kubectl --kubeconfig=$PWD/kubeconfigs/spoke.kubeconfig taint nodes --all \
+            hosted-e2e.open-cluster-management.io/no-addon-workloads=true:NoSchedule --overwrite
+      - name: Build image and load into hub + hosting
+        run: |
+          make images
+          kind load docker-image quay.io/open-cluster-management/managed-serviceaccount:latest --name hub
+          kind load docker-image quay.io/open-cluster-management/managed-serviceaccount:latest --name hosting
+      - name: Pre-create hosted-mode ManagedClusterAddOn
+        run: |
+          export KUBECONFIG=$PWD/kubeconfigs/hub.kubeconfig
+          kubectl apply -f - <<'EOF'
+          apiVersion: addon.open-cluster-management.io/v1beta1
+          kind: AddOnDeploymentConfig
+          metadata:
+            name: hosted-mode-config
+            namespace: spoke
+          spec:
+            agentInstallNamespace: msa-spoke
+          ---
+          apiVersion: addon.open-cluster-management.io/v1beta1
+          kind: ManagedClusterAddOn
+          metadata:
+            name: managed-serviceaccount
+            namespace: spoke
+            annotations:
+              addon.open-cluster-management.io/hosting-cluster-name: hosting
+              addon.open-cluster-management.io/v1alpha1-install-namespace: msa-spoke
+          spec:
+            configs:
+              - group: addon.open-cluster-management.io
+                resource: addondeploymentconfigs
+                namespace: spoke
+                name: hosted-mode-config
+          EOF
+      - name: Install managed-serviceaccount on the hub
+        run: |
+          export KUBECONFIG=$PWD/kubeconfigs/hub.kubeconfig
+          helm install \
+            -n open-cluster-management-addon --create-namespace \
+            managed-serviceaccount charts/managed-serviceaccount/ \
+            --set tag=latest \
+            --set featureGates.ephemeralIdentity=true
+      - name: Run hosted-mode e2e
+        run: |
+          # exclude suites covered by the single-cluster jobs above (install, ephemeral, clusterprofile)
+          make test-e2e-hosted \
+            E2E_TEST_CLUSTER_NAME=spoke \
+            HUB_KUBECONFIG=$PWD/kubeconfigs/hub.kubeconfig \
+            SPOKE_KUBECONFIG=$PWD/kubeconfigs/spoke.kubeconfig \
+            AGENT_KUBECONFIG=$PWD/kubeconfigs/hosting.kubeconfig \
+            HOSTING_CLUSTER_NAME=hosting \
+            HOSTED_INSTALL_NAMESPACE=msa-spoke \
+            GENKGO_ARGS='--ginkgo.label-filter='\''!install&&!ephemeral&&!clusterprofile'\'''
+      - name: Assert no hosted addon workload pods are on the spoke
+        run: |
+          pods=$(kubectl --kubeconfig=$PWD/kubeconfigs/spoke.kubeconfig get pods -A \
+            -l 'addon-agent in (managed-serviceaccount,managed-serviceaccount-kubeconfig-provisioner)' \
+            -o jsonpath='{range .items[*]}{.metadata.namespace}/{.metadata.name}{"\n"}{end}')
+          if [ -n "$pods" ]; then
+            echo "hosted addon workload pods were scheduled on the managed/spoke cluster:" >&2
+            echo "$pods" >&2
+            exit 1
+          fi

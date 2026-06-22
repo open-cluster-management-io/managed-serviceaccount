@@ -4,6 +4,10 @@ kind: Deployment
 metadata:
   name: managed-serviceaccount-addon-agent
   namespace: {{ .Values.addonInstallNamespace }}
+{{- if eq .Values.installMode "Hosted" }}
+  annotations:
+    addon.open-cluster-management.io/hosted-manifest-location: hosting
+{{- end }}
 spec:
   replicas: 1
   selector:
@@ -14,7 +18,11 @@ spec:
       labels:
         addon-agent: managed-serviceaccount
     spec:
+{{- if eq .Values.installMode "Hosted" }}
       serviceAccountName: managed-serviceaccount
+{{- else }}
+      serviceAccountName: {{ .Values.ManagedServiceAccountName }}
+{{- end }}
       securityContext:
         runAsNonRoot: true
         seccompProfile:
@@ -41,7 +49,11 @@ spec:
           args:
             - --leader-elect=false
             - --cluster-name={{ .Values.clusterName }}
+            - --install-mode={{ .Values.installMode }}
             - --kubeconfig=/etc/hub/kubeconfig
+{{- if eq .Values.installMode "Hosted" }}
+            - --spoke-kubeconfig=/etc/managed/kubeconfig
+{{- end }}
             - --lease-health-check=true
           ports:
             - name: metrics
@@ -51,6 +63,11 @@ spec:
             - name: hub-kubeconfig
               mountPath: /etc/hub/
               readOnly: true
+{{- if eq .Values.installMode "Hosted" }}
+            - name: managed-kubeconfig
+              mountPath: /etc/managed/
+              readOnly: true
+{{- end }}
           livenessProbe:
             httpGet:
               path: /healthz
@@ -61,6 +78,11 @@ spec:
         - name: hub-kubeconfig
           secret:
             secretName: {{ .Values.hubKubeConfigSecret }}
+{{- if eq .Values.installMode "Hosted" }}
+        - name: managed-kubeconfig
+          secret:
+            secretName: {{ .Values.ManagedKubeConfigSecret }}
+{{- end }}
 {{- if .Values.imagePullSecretData }}
       imagePullSecrets:
       - name: open-cluster-management-image-pull-credentials

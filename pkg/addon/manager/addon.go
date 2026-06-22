@@ -22,6 +22,7 @@ import (
 	addonutils "open-cluster-management.io/addon-framework/pkg/utils"
 	addonv1beta1 "open-cluster-management.io/api/addon/v1beta1"
 	clusterv1 "open-cluster-management.io/api/cluster/v1"
+	"open-cluster-management.io/managed-serviceaccount/pkg/addon/manager/provisioner"
 	"open-cluster-management.io/managed-serviceaccount/pkg/common"
 )
 
@@ -58,9 +59,16 @@ func NewAgentScheme() *runtime.Scheme {
 }
 
 func GetDefaultValues(image string, imagePullSecret *corev1.Secret) addonfactory.GetValuesFunc {
-	return func(_ *clusterv1.ManagedCluster, _ *addonv1beta1.ManagedClusterAddOn) (addonfactory.Values, error) {
+	return func(cluster *clusterv1.ManagedCluster, addon *addonv1beta1.ManagedClusterAddOn) (addonfactory.Values, error) {
 		values := addonfactory.Values{
-			"Image": image,
+			"Image":                                    image,
+			"ExternalManagedKubeConfigNamespace":       cluster.Name,
+			"ExternalManagedKubeConfigSecret":          provisioner.DefaultExternalManagedKubeConfigSecret,
+			"ManagedKubeConfigSecret":                  addon.Name + "-managed-kubeconfig",
+			"ManagedServiceAccountName":                provisioner.DefaultManagedServiceAccountName,
+			"ManagedKubeConfigTokenExpirationSeconds":  provisioner.DefaultTokenExpirationSeconds,
+			"ManagedKubeConfigRefreshBefore":           provisioner.DefaultRefreshBefore.String(),
+			"ManagedKubeConfigProvisionerSyncInterval": provisioner.DefaultSyncInterval.String(),
 		}
 
 		if imagePullSecret != nil {

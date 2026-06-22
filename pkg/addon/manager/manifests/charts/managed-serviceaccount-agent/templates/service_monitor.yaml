@@ -4,6 +4,10 @@ kind: ServiceMonitor
 metadata:
   name: managed-serviceaccount-addon-agent
   namespace: {{ .Values.addonInstallNamespace }}
+{{- if eq .Values.installMode "Hosted" }}
+  annotations:
+    addon.open-cluster-management.io/hosted-manifest-location: hosting
+{{- end }}
 {{- with .Values.Prometheus.ServiceMonitor.Labels }}
   labels:
 {{- range $key, $value := . }}

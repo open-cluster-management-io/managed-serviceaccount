@@ -51,11 +51,9 @@ var _ = Describe("Token Test for Managed Service Account v1beta1",
 					Name:      common.AddonName,
 				}, addon)
 				Expect(err).NotTo(HaveOccurred())
-				sa := &corev1.ServiceAccount{}
-				err = f.HubRuntimeClient().Get(context.TODO(), types.NamespacedName{
-					Namespace: addon.Status.Namespace,
-					Name:      msa.Name,
-				}, sa)
+				_, err = f.SpokeNativeClient().CoreV1().
+					ServiceAccounts(addon.Status.Namespace).
+					Get(context.TODO(), msa.Name, metav1.GetOptions{})
 				if apierrors.IsNotFound(err) {
 					return false, nil
 				}
@@ -149,11 +147,9 @@ var _ = Describe("Token Test for Managed Service Account v1beta1",
 			}, secret)
 			Expect(err).NotTo(HaveOccurred())
 
-			serviceAccount := &corev1.ServiceAccount{}
-			err = f.HubRuntimeClient().Get(context.TODO(), types.NamespacedName{
-				Namespace: addon.Status.Namespace,
-				Name:      targetName,
-			}, serviceAccount)
+			_, err = f.SpokeNativeClient().CoreV1().
+				ServiceAccounts(addon.Status.Namespace).
+				Get(context.TODO(), targetName, metav1.GetOptions{})
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Deleting ManagedServiceAccount", func() {
@@ -195,11 +191,9 @@ var _ = Describe("Token Test for Managed Service Account v1beta1",
 
 			//serviceaccount should be deleted
 			Eventually(func() error {
-				serviceAccount := &corev1.ServiceAccount{}
-				err = f.HubRuntimeClient().Get(context.TODO(), types.NamespacedName{
-					Namespace: addon.Status.Namespace,
-					Name:      targetName,
-				}, serviceAccount)
+				_, err = f.SpokeNativeClient().CoreV1().
+					ServiceAccounts(addon.Status.Namespace).
+					Get(context.TODO(), targetName, metav1.GetOptions{})
 				if err == nil {
 					return fmt.Errorf("serviceaccount %s/%s still exists", addon.Status.Namespace, targetName)
 				}
@@ -255,7 +249,9 @@ func validateToken(f framework.Framework, targetName string) {
 			Token: string(token),
 		},
 	}
-	err = f.HubRuntimeClient().Create(context.TODO(), tokenReview)
+	tokenReview, err = f.SpokeNativeClient().AuthenticationV1().
+		TokenReviews().
+		Create(context.TODO(), tokenReview, metav1.CreateOptions{})
 	Expect(err).NotTo(HaveOccurred())
 
 	Expect(tokenReview.Status.Authenticated).To(BeTrue())

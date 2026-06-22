@@ -198,6 +198,7 @@ func (o *HubManagerOptions) Run() error {
 		WithScheme(manager.NewAgentScheme()).
 		WithConfigGVRs(utils.AddOnDeploymentConfigGVR).
 		WithConfigCheckEnabledOption().
+		WithAgentHostedModeEnabledOption().
 		WithAgentInstallNamespace(utils.AgentInstallNamespaceFromDeploymentConfigFunc(deploymentConfigGetter)).
 		WithGetValuesFuncs(
 			manager.GetDefaultValues(o.AddonAgentImageName, imagePullSecret),

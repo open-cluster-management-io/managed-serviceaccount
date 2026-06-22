@@ -820,6 +820,7 @@ var _ = Describe("ClusterProfile Credentials Sync and Plugin Test", Label("clust
 				cmd := exec.Command(pluginPath, "--managed-serviceaccount="+msaName1)
 				cmd.Stdin = nil
 				cmd.Env = append(os.Environ(),
+					"KUBECONFIG="+f.HubKubeConfigPath(),
 					"NAMESPACE="+clusterProfileNamespace,
 					"KUBERNETES_EXEC_INFO="+string(execCredJSON),
 				)
@@ -861,6 +862,7 @@ var _ = Describe("ClusterProfile Credentials Sync and Plugin Test", Label("clust
 				cmd.Stdin = nil
 				cmd.Env = append(os.Environ(),
 					"NAMESPACE="+clusterProfileNamespace,
+					"KUBECONFIG="+f.HubKubeConfigPath(),
 					"KUBERNETES_EXEC_INFO="+string(execCredJSON),
 				)
 
