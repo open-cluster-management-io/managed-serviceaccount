@@ -10,7 +10,6 @@ Please copy the appropriate `:text:` or icon to the beginning of your PR title:
 :book: 📖 docs
 :memo: 📝 proposal
 :warning: ⚠️ breaking change
-:rocket: 🚀 release
 :seedling: 🌱 other/misc
 :question: ❓ requires manual review/categorization
 
