@@ -1,4 +1,5 @@
 {{- if eq .Values.hubDeployMode "AddOnTemplate" }}
+{{- $image := include "managed-serviceaccount-common.image" . }}
 apiVersion: addon.open-cluster-management.io/v1alpha1
 kind: AddOnTemplate
 metadata:
@@ -71,7 +72,7 @@ spec:
                 command:
                 - /msa
                 - agent
-                image: {{ .Values.image }}:{{ .Values.tag | default (print "v" .Chart.Version) }}
+                image: {{ $image }}
                 imagePullPolicy: IfNotPresent
                 securityContext:
                   allowPrivilegeEscalation: false

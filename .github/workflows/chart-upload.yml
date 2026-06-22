@@ -23,9 +23,11 @@ jobs:
         id: get_release_version
         run: |
           RELEASE_VERSION=${GITHUB_REF#refs/tags/}
+          TRIMMED_RELEASE_VERSION=${RELEASE_VERSION#v}
+          grep -Fqx "version: ${TRIMMED_RELEASE_VERSION}" "./charts/${CHART_NAME}/Chart.yaml"
           echo "::set-output name=RELEASE_VERSION::${RELEASE_VERSION}"
           echo "::set-output name=MAJOR_RELEASE_VERSION::${RELEASE_VERSION%.*}"
-          echo "::set-output name=TRIMMED_RELEASE_VERSION::${RELEASE_VERSION#v}"
+          echo "::set-output name=TRIMMED_RELEASE_VERSION::${TRIMMED_RELEASE_VERSION}"
     outputs:
       RELEASE_VERSION: ${{ steps.get_release_version.outputs.RELEASE_VERSION }}
       MAJOR_RELEASE_VERSION: ${{ steps.get_release_version.outputs.MAJOR_RELEASE_VERSION }}

@@ -42,7 +42,7 @@ var _ = Describe("Addon Installation Test", Label("install"),
 			}).WithTimeout(time.Minute).Should(BeTrue())
 		})
 
-		It("Addon should can be configured with AddOnDeployMentConfig", func() {
+		It("Addon should be configurable with AddOnDeploymentConfig", func() {
 			deployConfigName := "tolerations-deploy-config"
 			nodeSelector := map[string]string{"kubernetes.io/os": "linux"}
 			tolerations := []corev1.Toleration{{Key: "node-role.kubernetes.io/infra", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoSchedule}}
@@ -178,7 +178,7 @@ var _ = Describe("Addon Installation Test", Label("install"),
 			}).WithTimeout(time.Minute).ShouldNot(HaveOccurred())
 		})
 
-		It("Agent image should be overrode by cluster annotation", func() {
+		It("Agent image should be overridden by cluster annotation", func() {
 			By("Get Addon agent install namespace")
 			addon := &addonv1alpha1.ManagedClusterAddOn{}
 			err := f.HubRuntimeClient().Get(context.TODO(), types.NamespacedName{

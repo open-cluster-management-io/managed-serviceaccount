@@ -1,4 +1,5 @@
 {{- if include "managed-serviceaccount.hubManager.enabled" . }}
+{{- $image := include "managed-serviceaccount-common.image" . }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -21,7 +22,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: manager
-          image: {{ .Values.image }}:{{ .Values.tag | default (print "v" .Chart.Version) }}
+          image: {{ $image }}
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
@@ -38,7 +39,7 @@ spec:
             {{- end }}
             - --deploy-mode={{ .Values.hubDeployMode }}
             - --metrics-bind-address=:38080
-            - --agent-image-name={{ .Values.image }}:{{ .Values.tag | default (print "v" .Chart.Version) }}
+            - --agent-image-name={{ $image }}
             {{- if .Values.featureGates }}
             - --feature-gates=EphemeralIdentity={{ .Values.featureGates.ephemeralIdentity | default false}},ClusterProfile={{ .Values.featureGates.clusterProfile | default false}}
             {{- end }}

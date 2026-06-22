@@ -194,7 +194,7 @@ func (o *HubManagerOptions) Run() error {
 			o.ImagePullSecretName = os.Getenv("AGENT_IMAGE_PULL_SECRET")
 		}
 
-		imagePullSecret := &corev1.Secret{}
+		var imagePullSecret *corev1.Secret
 		if len(o.ImagePullSecretName) != 0 {
 			imagePullSecret, err = nativeClient.CoreV1().Secrets(hubNamespace).Get(
 				context.TODO(),
@@ -211,7 +211,7 @@ func (o *HubManagerOptions) Run() error {
 			}
 		}
 
-		agentFactory := addonfactory.NewAgentAddonFactory(common.AddonName, manager.FS, "manifests/templates").
+		agentFactory := addonfactory.NewAgentAddonFactory(common.AddonName, manager.FS, "manifests/charts/managed-serviceaccount-agent").
 			WithScheme(manager.NewAgentScheme()).
 			WithConfigGVRs(utils.AddOnDeploymentConfigGVR).
 			WithGetValuesFuncs(
@@ -230,7 +230,7 @@ func (o *HubManagerOptions) Run() error {
 			WithAgentRegistrationOption(manager.NewRegistrationOption(nativeClient)).
 			WithAgentDeployTriggerClusterFilter(utils.ClusterImageRegistriesAnnotationChanged)
 
-		agentAddOn, err := agentFactory.BuildTemplateAgentAddon()
+		agentAddOn, err := agentFactory.BuildHelmAgentAddon()
 		if err != nil {
 			setupLog.Error(err, "failed to build agent")
 			os.Exit(1)

@@ -8,6 +8,7 @@ env:
   # Common versions
   GO_VERSION: '1.26'
   GO_REQUIRED_MIN_VERSION: ''
+  HELM_VERSION: 'v3.20.1'
   GITHUB_REF: ${{ github.ref }}
   CHART_NAME: managed-serviceaccount
 
@@ -27,6 +28,9 @@ jobs:
         run: |
           echo "MAJOR_RELEASE_VERSION=${RELEASE_VERSION%.*}" >> $GITHUB_ENV
           echo "TRIMMED_RELEASE_VERSION=${RELEASE_VERSION#v}" >> $GITHUB_ENV
+      - name: verify chart version
+        run: |
+          grep -Fqx "version: ${TRIMMED_RELEASE_VERSION}" ./charts/${CHART_NAME}/Chart.yaml
     outputs:
       MAJOR_RELEASE_VERSION: ${{ env.MAJOR_RELEASE_VERSION }}
       RELEASE_VERSION: ${{ env.RELEASE_VERSION }}
@@ -149,7 +153,9 @@ jobs:
       - name: setup helm
         uses: azure/setup-helm@dda3372f752e03dde6b3237bc9431cdc2f7a02a2 # v5.0.0
         with:
-          version: v3.20.1
+          version: ${{ env.HELM_VERSION }}
+      - name: verify helm dependencies
+        run: make verify-helm-dependencies
       - name: chart package
         run: |
           mkdir -p release

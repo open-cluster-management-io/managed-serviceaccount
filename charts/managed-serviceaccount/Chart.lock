@@ -1,0 +1,6 @@
+dependencies:
+- name: managed-serviceaccount-common
+  repository: file://../managed-serviceaccount-common
+  version: 0.1.0
+digest: sha256:285aa6fa19fe8d79b9599ae173fbd43aa1825aea09f631ac30e74f660b0506fb
+generated: "2026-06-19T15:03:35.349368822+09:00"

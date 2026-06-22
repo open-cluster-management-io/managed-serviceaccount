@@ -1,8 +1,9 @@
+{{- $image := include "managed-serviceaccount-common.agentImage" . }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: managed-serviceaccount-addon-agent
-  namespace: {{ .AddonInstallNamespace }}
+  namespace: {{ .Values.addonInstallNamespace }}
 spec:
   replicas: 1
   selector:
@@ -18,27 +19,15 @@ spec:
         runAsNonRoot: true
         seccompProfile:
           type: RuntimeDefault
-{{- if .NodeSelector }}
-      nodeSelector:
-      {{- range $key, $value := .NodeSelector }}
-        "{{ $key }}": "{{ $value }}"
-      {{- end }}
+{{- if .Values.NodeSelector }}
+      nodeSelector: {{ toYaml .Values.NodeSelector | nindent 8 }}
 {{- end }}
-{{- if .Tolerations }}
-      tolerations:
-      {{- range $toleration := .Tolerations }}
-      - key: "{{ $toleration.Key }}"
-        value: "{{ $toleration.Value }}"
-        effect: "{{ $toleration.Effect }}"
-        operator: "{{ $toleration.Operator }}"
-        {{- if $toleration.TolerationSeconds }}
-        tolerationSeconds: {{ $toleration.TolerationSeconds }}
-        {{- end }}
-      {{- end }}
+{{- if .Values.Tolerations }}
+      tolerations: {{ toYaml .Values.Tolerations | nindent 8 }}
 {{- end }}
       containers:
         - name: addon-agent
-          image: {{ .Image }}
+          image: {{ $image }}
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
@@ -51,7 +40,7 @@ spec:
             - agent
           args:
             - --leader-elect=false
-            - --cluster-name={{ .ClusterName }}
+            - --cluster-name={{ .Values.clusterName }}
             - --kubeconfig=/etc/hub/kubeconfig
             - --lease-health-check=true
           ports:
@@ -71,8 +60,8 @@ spec:
       volumes:
         - name: hub-kubeconfig
           secret:
-            secretName: managed-serviceaccount-hub-kubeconfig
-{{- if .ImagePullSecretData }}
+            secretName: {{ .Values.hubKubeConfigSecret }}
+{{- if .Values.imagePullSecretData }}
       imagePullSecrets:
       - name: open-cluster-management-image-pull-credentials
 {{- end }}
