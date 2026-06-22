@@ -194,7 +194,7 @@ func (o *HubManagerOptions) Run() error {
 			o.ImagePullSecretName = os.Getenv("AGENT_IMAGE_PULL_SECRET")
 		}
 
-		imagePullSecret := &corev1.Secret{}
+		var imagePullSecret *corev1.Secret
 		if len(o.ImagePullSecretName) != 0 {
 			imagePullSecret, err = nativeClient.CoreV1().Secrets(hubNamespace).Get(
 				context.TODO(),
