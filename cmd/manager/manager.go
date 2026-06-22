@@ -161,9 +161,6 @@ func (o *HubManagerOptions) Run() error {
 		os.Exit(1)
 	}
 
-	// Setup controllers based on deploy mode:
-	// - Deployment mode (deploy-mode=Deployment): Setup addon manager + optional controllers
-	// - AddOnTemplate mode (deploy-mode=AddOnTemplate): Setup only ClusterProfileCredSyncer controller if feature gate enabled
 	var addonManager addonmanager.AddonManager
 	if o.DeployMode != "AddOnTemplate" {
 		addonManager, err = addonmanager.New(mgr.GetConfig())
@@ -174,13 +171,13 @@ func (o *HubManagerOptions) Run() error {
 
 		nativeClient, err := kubernetes.NewForConfig(mgr.GetConfig())
 		if err != nil {
-			setupLog.Error(err, "unable to instantiating kubernetes native client")
+			setupLog.Error(err, "unable to instantiate kubernetes native client")
 			os.Exit(1)
 		}
 
 		addonClient, err := addonclient.NewForConfig(mgr.GetConfig())
 		if err != nil {
-			setupLog.Error(err, "unable to instantiating ocm addon client")
+			setupLog.Error(err, "unable to instantiate ocm addon client")
 			os.Exit(1)
 		}
 
@@ -189,6 +186,7 @@ func (o *HubManagerOptions) Run() error {
 			inClusterNamespace, err := util.GetInClusterNamespace()
 			if err != nil {
 				setupLog.Error(err, "the manager should be either running in a container or specify NAMESPACE environment")
+				os.Exit(1)
 			}
 			hubNamespace = inClusterNamespace
 		}
@@ -197,35 +195,28 @@ func (o *HubManagerOptions) Run() error {
 			o.ImagePullSecretName = os.Getenv("AGENT_IMAGE_PULL_SECRET")
 		}
 
-		var imagePullSecret *corev1.Secret
-		if len(o.ImagePullSecretName) != 0 {
-			imagePullSecret, err = nativeClient.CoreV1().Secrets(hubNamespace).Get(
-				context.TODO(),
-				o.ImagePullSecretName,
-				metav1.GetOptions{},
-			)
-			if err != nil {
-				setupLog.Error(err, "fail to get agent image pull secret")
-				os.Exit(1)
-			}
-			if imagePullSecret.Type != corev1.SecretTypeDockerConfigJson {
-				setupLog.Error(errors.Errorf("incorrect type for agent image pull secret"), "")
-				os.Exit(1)
-			}
+		imagePullSecret, err := getAgentImagePullSecret(context.TODO(), nativeClient, hubNamespace, o.ImagePullSecretName)
+		if err != nil {
+			setupLog.Error(err, "unable to get agent image pull secret")
+			os.Exit(1)
 		}
+
+		deploymentConfigGetter := utils.NewAddOnDeploymentConfigGetter(addonClient)
 
 		agentFactory := addonfactory.NewAgentAddonFactory(common.AddonName, manager.FS, "manifests/charts/managed-serviceaccount-agent").
 			WithScheme(manager.NewAgentScheme()).
 			WithConfigGVRs(utils.AddOnDeploymentConfigGVR).
+			WithConfigCheckEnabledOption().
+			WithAgentInstallNamespace(utils.AgentInstallNamespaceFromDeploymentConfigFunc(deploymentConfigGetter)).
 			WithGetValuesFuncs(
 				manager.GetDefaultValues(o.AddonAgentImageName, imagePullSecret, o.EnableNetworkPolicies),
 				addonfactory.GetAgentImageValues(
-					utils.NewAddOnDeploymentConfigGetter(addonClient),
+					deploymentConfigGetter,
 					"Image",
 					o.AddonAgentImageName,
 				),
 				addonfactory.GetAddOnDeploymentConfigValues(
-					utils.NewAddOnDeploymentConfigGetter(addonClient),
+					deploymentConfigGetter,
 					addonfactory.ToAddOnDeploymentConfigValues,
 					manager.ToAddOnPrometheusValues,
 				),
@@ -271,7 +262,6 @@ func (o *HubManagerOptions) Run() error {
 	ctx, cancel := context.WithCancel(ctrl.SetupSignalHandler())
 	defer cancel()
 
-	// Only start addon manager if not in AddOnTemplate mode
 	if o.DeployMode != "AddOnTemplate" {
 		if err := addonManager.Start(ctx); err != nil {
 			setupLog.Error(err, "unable to start addon agent")
@@ -284,4 +274,28 @@ func (o *HubManagerOptions) Run() error {
 		os.Exit(1)
 	}
 	return nil
+}
+
+func getAgentImagePullSecret(
+	ctx context.Context,
+	nativeClient kubernetes.Interface,
+	hubNamespace, imagePullSecretName string,
+) (*corev1.Secret, error) {
+	if len(imagePullSecretName) == 0 {
+		return nil, nil
+	}
+
+	imagePullSecret, err := nativeClient.CoreV1().Secrets(hubNamespace).Get(
+		ctx,
+		imagePullSecretName,
+		metav1.GetOptions{},
+	)
+	if err != nil {
+		return nil, errors.Wrap(err, "fail to get agent image pull secret")
+	}
+	if imagePullSecret.Type != corev1.SecretTypeDockerConfigJson {
+		return nil, errors.Errorf("incorrect type for agent image pull secret")
+	}
+
+	return imagePullSecret, nil
 }

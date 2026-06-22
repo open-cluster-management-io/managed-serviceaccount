@@ -167,7 +167,17 @@ jobs:
              --set featureGates.ephemeralIdentity=true \
              --set featureGates.clusterProfile=true
       - name: Run e2e test
-        run: make test-e2e GENKGO_ARGS='--ginkgo.label-filter='\''!template-install'\'''
+        run: make test-e2e
+      - name: Dump e2e diagnostics
+        if: failure()
+        run: |
+          kubectl get clustermanagementaddon managed-serviceaccount -o yaml || true
+          kubectl get managedclusteraddon -A -o yaml || true
+          kubectl get addondeploymentconfig -A -o yaml || true
+          kubectl get manifestwork -A -o yaml || true
+          kubectl get deploy,po,sa,role,rolebinding -A | grep -E 'managed-serviceaccount|open-cluster-management-agent-addon|open-cluster-management-addon' || true
+          kubectl get pod -A | grep -i addon || true
+          kubectl -n open-cluster-management-addon logs deploy/managed-serviceaccount-addon-manager --all-containers --tail=-1 || true
 
   e2e-addon-template:
     name: e2e-addon-template
@@ -205,6 +215,7 @@ jobs:
           kind load docker-image quay.io/open-cluster-management/managed-serviceaccount:latest --name chart-testing
       - name: Install latest managed-serviceaccount
         run: |
+          kubectl apply -f vendor/open-cluster-management.io/api/addon/v1beta1/0000_03_addon.open-cluster-management.io_addontemplates.crd.yaml
           kubectl apply -f https://raw.githubusercontent.com/kubernetes-sigs/cluster-inventory-api/refs/heads/main/config/crd/bases/multicluster.x-k8s.io_clusterprofiles.yaml
           helm install \
             -n open-cluster-management-addon --create-namespace \
@@ -220,4 +231,15 @@ jobs:
           # run ephemeral tests after non-ephemeral and non-install tests to wait for the addon agent to be steady
           make test-e2e GENKGO_ARGS='--ginkgo.label-filter=ephemeral'
           # run install tests after non-ephemeral tests since it may cause the addon agent to be restarted
-          make test-e2e GENKGO_ARGS='--ginkgo.label-filter=install'
+          make test-e2e GENKGO_ARGS='--ginkgo.label-filter='\''install&&!deployment-install'\'''
+      - name: Dump e2e diagnostics
+        if: failure()
+        run: |
+          kubectl get crd addontemplates.addon.open-cluster-management.io -o yaml || true
+          kubectl get clustermanagementaddon managed-serviceaccount -o yaml || true
+          kubectl get managedclusteraddon -A -o yaml || true
+          kubectl get addondeploymentconfig -A -o yaml || true
+          kubectl get manifestwork -A -o yaml || true
+          kubectl get deploy,po,sa,role,rolebinding -A | grep -E 'managed-serviceaccount|open-cluster-management-agent-addon|open-cluster-management-addon' || true
+          kubectl get pod -A | grep -i addon || true
+          kubectl -n open-cluster-management-addon logs deploy/managed-serviceaccount-addon-manager --all-containers --tail=-1 || true

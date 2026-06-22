@@ -1,13 +1,24 @@
 {{- if .Values.targetCluster }}
-apiVersion: addon.open-cluster-management.io/v1alpha1
-kind: ManagedClusterAddOn
+{{- if ne .Values.hubDeployMode "AddOnTemplate" }}
+apiVersion: addon.open-cluster-management.io/v1beta1
+kind: AddOnDeploymentConfig
 metadata:
   name: managed-serviceaccount
   namespace: {{ .Values.targetCluster }}
 spec:
-{{- if eq .Values.hubDeployMode "AddOnTemplate" }}
-  installNamespace: "open-cluster-management-agent-addon"
+  agentInstallNamespace: open-cluster-management-managed-serviceaccount
+---
+{{- end }}
+apiVersion: addon.open-cluster-management.io/v1beta1
+kind: ManagedClusterAddOn
+metadata:
+  name: managed-serviceaccount
+  namespace: {{ .Values.targetCluster }}
+{{- if ne .Values.hubDeployMode "AddOnTemplate" }}
+spec:
+  configs:
+{{ include "managed-serviceaccount.addOnDeploymentConfigRef" (dict "namespace" .Values.targetCluster) | indent 2 }}
 {{- else }}
-  installNamespace: "open-cluster-management-managed-serviceaccount"
+spec: {}
 {{- end }}
 {{- end }}

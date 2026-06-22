@@ -2,8 +2,8 @@
 
 This chart installs the Managed ServiceAccount addon for Open Cluster Management
 (OCM). It can deploy the hub-side addon manager, publish an `AddOnTemplate` for
-addon-manager driven installs, and optionally render a `ManagedClusterAddOn` for a
-specific managed cluster.
+addon-manager-driven installs, and optionally render a
+`ManagedClusterAddOn` for a specific managed cluster.
 
 ## Prerequisites
 
@@ -23,6 +23,10 @@ helm install managed-serviceaccount ./charts/managed-serviceaccount \
 By default, the chart installs the hub manager in `Deployment` mode and configures
 the `ClusterManagementAddOn` to install the addon on all managed clusters through
 the `global` placement.
+
+For placement-managed installs in `Deployment` mode, agents use the
+addon-framework default namespace `open-cluster-management-agent-addon` unless an
+`AddOnDeploymentConfig` override selects another namespace.
 
 ## Values
 
@@ -45,8 +49,8 @@ the `global` placement.
 
 ### Hub Manager Deployment
 
-`hubDeployMode=Deployment` installs the hub addon manager. The manager renders the
-embedded agent chart for each managed cluster through addon-framework.
+`hubDeployMode=Deployment` installs the hub addon manager. The manager renders
+the embedded agent chart for each managed cluster through addon-framework.
 
 ```bash
 helm install managed-serviceaccount ./charts/managed-serviceaccount \
@@ -55,11 +59,21 @@ helm install managed-serviceaccount ./charts/managed-serviceaccount \
   --set tag=latest
 ```
 
+To render a `ManagedClusterAddOn` for a specific cluster in the same install, set
+`targetCluster`:
+
+```bash
+helm install managed-serviceaccount ./charts/managed-serviceaccount \
+  --namespace open-cluster-management-addon \
+  --create-namespace \
+  --set targetCluster=loopback
+```
+
 ### AddOnTemplate
 
-`hubDeployMode=AddOnTemplate` renders an `AddOnTemplate` and the hub RBAC needed by
-addon-manager. When `featureGates.clusterProfile=true`, the chart also renders the
-hub manager so ClusterProfile credential sync can run.
+`hubDeployMode=AddOnTemplate` renders an `AddOnTemplate` and the hub RBAC needed
+by addon-manager. When `featureGates.clusterProfile=true`, the chart also renders
+the hub manager so ClusterProfile credential sync can run.
 
 ```bash
 helm install managed-serviceaccount ./charts/managed-serviceaccount \
@@ -79,12 +93,17 @@ helm install managed-serviceaccount ./charts/managed-serviceaccount \
   --set targetCluster=loopback
 ```
 
+In `AddOnTemplate` mode, the chart does not render an `AddOnDeploymentConfig` for
+`targetCluster` and does not add `spec.configs` to the rendered
+`ManagedClusterAddOn`.
+
 ## Prometheus
 
 Set `prometheus.enabled=true` to render `ServiceMonitor` resources. In
 `Deployment` mode this covers the hub manager. Agent metrics in manager-driven
-installs can also be enabled through `AddOnDeploymentConfig` customized variables.
-In `AddOnTemplate` mode the rendered template includes the agent `ServiceMonitor`.
+installs can also be enabled through `AddOnDeploymentConfig` customized
+variables. In `AddOnTemplate` mode the rendered template includes the agent
+`ServiceMonitor`.
 
 ```bash
 helm install managed-serviceaccount ./charts/managed-serviceaccount \
