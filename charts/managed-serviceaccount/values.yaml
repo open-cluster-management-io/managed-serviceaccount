@@ -20,9 +20,3 @@ prometheus:
   enabled: false
   serviceMonitor:
     labels: {}
-
-# Hub deploy mode: AddOnTemplate or Deployment
-hubDeployMode: Deployment
-
-# Name of the managed service-account addon template, only used when hubDeployMode is AddOnTemplate
-addOnTemplateName: managed-serviceaccount

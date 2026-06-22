@@ -25,13 +25,6 @@ The addon follows the standard OCM [addon architecture](https://open-cluster-man
 - Periodically projects service account tokens as secret resources to the hub cluster
 - Handles token refresh according to the configured rotation policy
 
-### Installation Methods
-
-The managed service account addon supports 2 installation ways:
-
-- **default (manager - agent)**: Full deployment with both addon manager and addon agent components
-- **addontemplate (only agent)**: Lightweight deployment with only the addon agent component
-
 ## Installation
 
 ### Prerequisites

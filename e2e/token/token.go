@@ -15,7 +15,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
-	addonv1alpha1 "open-cluster-management.io/api/addon/v1alpha1"
+	addonv1beta1 "open-cluster-management.io/api/addon/v1beta1"
 	authv1beta1 "open-cluster-management.io/managed-serviceaccount/apis/authentication/v1beta1"
 	"open-cluster-management.io/managed-serviceaccount/e2e/framework"
 	"open-cluster-management.io/managed-serviceaccount/pkg/common"
@@ -45,7 +45,7 @@ var _ = Describe("Token Test for Managed Service Account v1beta1",
 
 			By("Check local service-account under agent's namespace")
 			Eventually(func() (bool, error) {
-				addon := &addonv1alpha1.ManagedClusterAddOn{}
+				addon := &addonv1beta1.ManagedClusterAddOn{}
 				err = f.HubRuntimeClient().Get(context.TODO(), types.NamespacedName{
 					Namespace: f.TestClusterName(),
 					Name:      common.AddonName,
@@ -128,7 +128,7 @@ var _ = Describe("Token Test for Managed Service Account v1beta1",
 		It("ManagedServiceAccount deletion should delete ServiceAccount", func() {
 			var err error
 
-			addon := &addonv1alpha1.ManagedClusterAddOn{}
+			addon := &addonv1beta1.ManagedClusterAddOn{}
 			err = f.HubRuntimeClient().Get(context.TODO(), types.NamespacedName{
 				Namespace: f.TestClusterName(),
 				Name:      common.AddonName,
@@ -214,7 +214,7 @@ var _ = Describe("Token Test for Managed Service Account v1beta1",
 
 func validateToken(f framework.Framework, targetName string) {
 	var err error
-	addon := &addonv1alpha1.ManagedClusterAddOn{}
+	addon := &addonv1beta1.ManagedClusterAddOn{}
 	err = f.HubRuntimeClient().Get(context.TODO(), types.NamespacedName{
 		Namespace: f.TestClusterName(),
 		Name:      common.AddonName,

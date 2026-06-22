@@ -1,4 +1,3 @@
-{{- if include "managed-serviceaccount.hubManager.enabled" . }}
 apiVersion: v1
 kind: Service
 metadata:
@@ -14,4 +13,3 @@ spec:
       port: 38080
       targetPort: metrics
       protocol: TCP
-{{- end }}
