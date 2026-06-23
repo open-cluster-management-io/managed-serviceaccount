@@ -2,6 +2,10 @@ kind: ClusterRole
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
   name: open-cluster-management:managed-serviceaccount:addon-agent
+{{- if eq .Values.installMode "Hosted" }}
+  annotations:
+    addon.open-cluster-management.io/hosted-manifest-location: managed
+{{- end }}
 rules:
 - apiGroups: ["authentication.k8s.io"]
   resources: ["tokenreviews"]

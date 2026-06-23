@@ -1,0 +1,17 @@
+{{- if eq .Values.installMode "Hosted" }}
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: managed-serviceaccount-kubeconfig-provisioner-source
+  namespace: {{ include "managed-serviceaccount-agent.externalManagedKubeConfigNamespace" . }}
+  annotations:
+    addon.open-cluster-management.io/hosted-manifest-location: hosting
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: managed-serviceaccount-kubeconfig-provisioner-source
+subjects:
+  - kind: ServiceAccount
+    name: managed-serviceaccount-kubeconfig-provisioner
+    namespace: {{ .Values.addonInstallNamespace }}
+{{- end }}

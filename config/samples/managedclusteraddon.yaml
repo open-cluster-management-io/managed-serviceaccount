@@ -1,7 +1,19 @@
-apiVersion: addon.open-cluster-management.io/v1alpha1
+apiVersion: addon.open-cluster-management.io/v1beta1
+kind: AddOnDeploymentConfig
+metadata:
+  name: managed-serviceaccount
+  namespace: cluster-test2
+spec:
+  agentInstallNamespace: open-cluster-management-managed-serviceaccount
+---
+apiVersion: addon.open-cluster-management.io/v1beta1
 kind: ManagedClusterAddOn
 metadata:
   name: managed-serviceaccount
   namespace: cluster-test2
 spec:
-  installNamespace: "open-cluster-management-managed-serviceaccount"
+  configs:
+  - group: addon.open-cluster-management.io
+    resource: addondeploymentconfigs
+    namespace: cluster-test2
+    name: managed-serviceaccount

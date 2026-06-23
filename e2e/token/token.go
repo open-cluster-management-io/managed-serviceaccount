@@ -15,7 +15,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
-	addonv1alpha1 "open-cluster-management.io/api/addon/v1alpha1"
+	addonv1beta1 "open-cluster-management.io/api/addon/v1beta1"
 	authv1beta1 "open-cluster-management.io/managed-serviceaccount/apis/authentication/v1beta1"
 	"open-cluster-management.io/managed-serviceaccount/e2e/framework"
 	"open-cluster-management.io/managed-serviceaccount/pkg/common"
@@ -45,17 +45,15 @@ var _ = Describe("Token Test for Managed Service Account v1beta1",
 
 			By("Check local service-account under agent's namespace")
 			Eventually(func() (bool, error) {
-				addon := &addonv1alpha1.ManagedClusterAddOn{}
+				addon := &addonv1beta1.ManagedClusterAddOn{}
 				err = f.HubRuntimeClient().Get(context.TODO(), types.NamespacedName{
 					Namespace: f.TestClusterName(),
 					Name:      common.AddonName,
 				}, addon)
 				Expect(err).NotTo(HaveOccurred())
-				sa := &corev1.ServiceAccount{}
-				err = f.HubRuntimeClient().Get(context.TODO(), types.NamespacedName{
-					Namespace: addon.Status.Namespace,
-					Name:      msa.Name,
-				}, sa)
+				_, err = f.SpokeNativeClient().CoreV1().
+					ServiceAccounts(addon.Status.Namespace).
+					Get(context.TODO(), msa.Name, metav1.GetOptions{})
 				if apierrors.IsNotFound(err) {
 					return false, nil
 				}
@@ -128,7 +126,7 @@ var _ = Describe("Token Test for Managed Service Account v1beta1",
 		It("ManagedServiceAccount deletion should delete ServiceAccount", func() {
 			var err error
 
-			addon := &addonv1alpha1.ManagedClusterAddOn{}
+			addon := &addonv1beta1.ManagedClusterAddOn{}
 			err = f.HubRuntimeClient().Get(context.TODO(), types.NamespacedName{
 				Namespace: f.TestClusterName(),
 				Name:      common.AddonName,
@@ -149,11 +147,9 @@ var _ = Describe("Token Test for Managed Service Account v1beta1",
 			}, secret)
 			Expect(err).NotTo(HaveOccurred())
 
-			serviceAccount := &corev1.ServiceAccount{}
-			err = f.HubRuntimeClient().Get(context.TODO(), types.NamespacedName{
-				Namespace: addon.Status.Namespace,
-				Name:      targetName,
-			}, serviceAccount)
+			_, err = f.SpokeNativeClient().CoreV1().
+				ServiceAccounts(addon.Status.Namespace).
+				Get(context.TODO(), targetName, metav1.GetOptions{})
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Deleting ManagedServiceAccount", func() {
@@ -195,11 +191,9 @@ var _ = Describe("Token Test for Managed Service Account v1beta1",
 
 			//serviceaccount should be deleted
 			Eventually(func() error {
-				serviceAccount := &corev1.ServiceAccount{}
-				err = f.HubRuntimeClient().Get(context.TODO(), types.NamespacedName{
-					Namespace: addon.Status.Namespace,
-					Name:      targetName,
-				}, serviceAccount)
+				_, err = f.SpokeNativeClient().CoreV1().
+					ServiceAccounts(addon.Status.Namespace).
+					Get(context.TODO(), targetName, metav1.GetOptions{})
 				if err == nil {
 					return fmt.Errorf("serviceaccount %s/%s still exists", addon.Status.Namespace, targetName)
 				}
@@ -214,7 +208,7 @@ var _ = Describe("Token Test for Managed Service Account v1beta1",
 
 func validateToken(f framework.Framework, targetName string) {
 	var err error
-	addon := &addonv1alpha1.ManagedClusterAddOn{}
+	addon := &addonv1beta1.ManagedClusterAddOn{}
 	err = f.HubRuntimeClient().Get(context.TODO(), types.NamespacedName{
 		Namespace: f.TestClusterName(),
 		Name:      common.AddonName,
@@ -255,7 +249,9 @@ func validateToken(f framework.Framework, targetName string) {
 			Token: string(token),
 		},
 	}
-	err = f.HubRuntimeClient().Create(context.TODO(), tokenReview)
+	tokenReview, err = f.SpokeNativeClient().AuthenticationV1().
+		TokenReviews().
+		Create(context.TODO(), tokenReview, metav1.CreateOptions{})
 	Expect(err).NotTo(HaveOccurred())
 
 	Expect(tokenReview.Status.Authenticated).To(BeTrue())

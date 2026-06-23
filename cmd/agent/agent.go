@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"flag"
+	"fmt"
 	"net/http"
 	"os"
 	"strings"
@@ -27,6 +28,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
+	addonconstants "open-cluster-management.io/addon-framework/pkg/addonmanager/constants"
 	addonutils "open-cluster-management.io/addon-framework/pkg/utils"
 	authv1beta1 "open-cluster-management.io/managed-serviceaccount/apis/authentication/v1beta1"
 	"open-cluster-management.io/managed-serviceaccount/pkg/addon/agent/controller"
@@ -72,6 +74,8 @@ func (o *AgentOptions) AddFlags(flags *pflag.FlagSet) {
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
 	flags.StringVar(&o.ClusterName, "cluster-name", "", "The name of the managed cluster.")
+	flags.StringVar(&o.InstallMode, "install-mode", addonconstants.InstallModeDefault,
+		"The install mode of the addon agent. Options are Default and Hosted.")
 	flags.StringVar(&o.SpokeKubeconfig, "spoke-kubeconfig", "", "The kubeconfig to talk to the managed cluster, "+
 		"will use the in-cluster client if not specified.")
 	flags.Var(
@@ -89,13 +93,14 @@ type AgentOptions struct {
 	ProbeAddr            string
 	FeatureGatesFlags    map[string]bool
 	ClusterName          string
+	InstallMode          string
 	SpokeKubeconfig      string
 	LeaseHealthCheck     bool
 }
 
 // NewAgentOptions returns an AgentOptions
 func NewAgentOptions() *AgentOptions {
-	return &AgentOptions{}
+	return &AgentOptions{InstallMode: addonconstants.InstallModeDefault}
 }
 
 func (o *AgentOptions) Run() error {
@@ -103,6 +108,10 @@ func (o *AgentOptions) Run() error {
 	klog.SetOutput(os.Stdout)
 	klog.InitFlags(flag.CommandLine)
 	ctrl.SetLogger(logger)
+
+	if err := o.validateInstallMode(); err != nil {
+		return err
+	}
 
 	err := features.FeatureGates.SetFromMap(o.FeatureGatesFlags)
 	if err != nil {
@@ -228,7 +237,14 @@ func (o *AgentOptions) Run() error {
 	defer cancel()
 
 	if o.LeaseHealthCheck {
-		leaseUpdater, err := health.NewAddonHealthUpdater(mgr.GetConfig(), o.ClusterName, spokeCfg, spokeNamespace)
+		leaseCfg := spokeCfg
+		if o.InstallMode == addonconstants.InstallModeHosted {
+			leaseCfg, err = rest.InClusterConfig()
+			if err != nil {
+				klog.Fatal("failed build a in-cluster lease client config")
+			}
+		}
+		leaseUpdater, err := health.NewAddonHealthUpdater(mgr.GetConfig(), o.ClusterName, leaseCfg, spokeNamespace)
 		if err != nil {
 			klog.Fatalf("unable to create healthiness lease updater for controller %v", "ManagedServiceAccount")
 		}
@@ -250,6 +266,24 @@ func (o *AgentOptions) Run() error {
 	}
 
 	return nil
+}
+
+func (o *AgentOptions) validateInstallMode() error {
+	if len(o.InstallMode) == 0 {
+		o.InstallMode = addonconstants.InstallModeDefault
+	}
+	switch o.InstallMode {
+	case addonconstants.InstallModeDefault:
+		return nil
+	case addonconstants.InstallModeHosted:
+		if len(o.SpokeKubeconfig) == 0 {
+			return fmt.Errorf("--spoke-kubeconfig is required when --install-mode=%s", addonconstants.InstallModeHosted)
+		}
+		return nil
+	default:
+		return fmt.Errorf("unsupported --install-mode %q, must be %q or %q",
+			o.InstallMode, addonconstants.InstallModeDefault, addonconstants.InstallModeHosted)
+	}
 }
 
 func (o *AgentOptions) configCheckerPaths() []string {

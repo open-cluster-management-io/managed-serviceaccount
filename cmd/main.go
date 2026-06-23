@@ -11,6 +11,7 @@ import (
 
 	"open-cluster-management.io/managed-serviceaccount/cmd/agent"
 	hub "open-cluster-management.io/managed-serviceaccount/cmd/manager"
+	"open-cluster-management.io/managed-serviceaccount/cmd/provisioner"
 )
 
 func main() {
@@ -36,6 +37,7 @@ func newCommand() *cobra.Command {
 
 	cmd.AddCommand(hub.NewManager())
 	cmd.AddCommand(agent.NewAgent())
+	cmd.AddCommand(provisioner.NewManagedKubeconfigProvisioner())
 
 	return cmd
 }

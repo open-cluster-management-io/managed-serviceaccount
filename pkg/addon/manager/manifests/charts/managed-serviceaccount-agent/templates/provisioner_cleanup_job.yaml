@@ -1,0 +1,51 @@
+{{- if eq .Values.installMode "Hosted" }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: managed-serviceaccount-kubeconfig-cleanup
+  namespace: {{ .Values.addonInstallNamespace }}
+  annotations:
+    addon.open-cluster-management.io/hosted-manifest-location: hosting
+    addon.open-cluster-management.io/addon-pre-delete: ""
+spec:
+  backoffLimit: 3
+  template:
+    spec:
+      serviceAccountName: managed-serviceaccount-kubeconfig-provisioner
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+{{- if .Values.NodeSelector }}
+      nodeSelector: {{ toYaml .Values.NodeSelector | nindent 8 }}
+{{- end }}
+{{- if .Values.Tolerations }}
+      tolerations: {{ toYaml .Values.Tolerations | nindent 8 }}
+{{- end }}
+      containers:
+        - name: kubeconfig-cleanup
+          image: {{ include "managed-serviceaccount-common.agentImage" . }}
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+              - ALL
+          command:
+            - /msa
+            - managed-kubeconfig-provisioner
+          args:
+            - --cleanup
+            - --cluster-name={{ .Values.clusterName }}
+            - --source-namespace={{ include "managed-serviceaccount-agent.externalManagedKubeConfigNamespace" . }}
+            - --source-secret={{ .Values.ExternalManagedKubeConfigSecret }}
+            - --target-namespace={{ .Values.addonInstallNamespace }}
+            - --target-secret={{ .Values.ManagedKubeConfigSecret }}
+            - --hub-kubeconfig-secret={{ .Values.hubKubeConfigSecret }}
+{{- if .Values.imagePullSecretData }}
+      imagePullSecrets:
+      - name: open-cluster-management-image-pull-credentials
+{{- end }}
+{{- end }}
