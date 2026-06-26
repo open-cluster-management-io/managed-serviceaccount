@@ -89,14 +89,7 @@ test-helm: verify-helm-dependencies ## Lint and render Helm charts.
 		--namespace open-cluster-management-addon \
 		--set featureGates.ephemeralIdentity=true \
 		--set featureGates.clusterProfile=true >/dev/null
-	$(HELM) template managed-serviceaccount charts/managed-serviceaccount \
-		--namespace open-cluster-management-addon \
-		--set hubDeployMode=AddOnTemplate >/dev/null
-	$(HELM) template managed-serviceaccount charts/managed-serviceaccount \
-		--namespace open-cluster-management-addon \
-		--set hubDeployMode=AddOnTemplate \
-		--set featureGates.ephemeralIdentity=true \
-		--set featureGates.clusterProfile=true >/dev/null
+	HELM_PATH=$(HELM) go test ./charts/managed-serviceaccount -count=1
 	$(HELM) lint pkg/addon/manager/manifests/charts/managed-serviceaccount-agent
 	$(HELM) template managed-serviceaccount-agent pkg/addon/manager/manifests/charts/managed-serviceaccount-agent \
 		--namespace open-cluster-management-agent-addon >/dev/null

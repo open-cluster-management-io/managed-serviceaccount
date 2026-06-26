@@ -163,8 +163,9 @@ func TestManifestAddonAgent(t *testing.T) {
 	addonName := "addon1"
 	imageName := "imageName1"
 	hubKubeconfigSecretName := "hub-kubeconfig-secret"
+	installNamespace := addonfactory.AddonDefaultInstallNamespace
 	manifestNames := []string{
-		addonName,
+		installNamespace,
 		"managed-serviceaccount",
 		"open-cluster-management:managed-serviceaccount:addon-agent",
 		"open-cluster-management:managed-serviceaccount:addon-agent",
@@ -226,7 +227,7 @@ func TestManifestAddonAgent(t *testing.T) {
 				obj, ok := manifest.(metav1.ObjectMetaAccessor)
 				assert.True(t, ok, "invalid manifest")
 				if ns := obj.GetObjectMeta().GetNamespace(); len(ns) > 0 {
-					assert.Equalf(t, addonName, ns, "unexpected ns of manifest %q", obj.GetObjectMeta().GetName())
+					assert.Equalf(t, installNamespace, ns, "unexpected ns of manifest %q", obj.GetObjectMeta().GetName())
 				}
 				actual = append(actual, obj.GetObjectMeta().GetName())
 				if deployment, ok := manifest.(*appsv1.Deployment); ok {
@@ -296,6 +297,86 @@ func TestGetDefaultValuesRequiresDockerConfigJsonKey(t *testing.T) {
 			assert.ErrorContains(t, err, `missing ".dockerconfigjson"`)
 		})
 	}
+}
+
+func TestManifestAddonAgentUsesDeploymentConfigInstallNamespace(t *testing.T) {
+	clusterName := "cluster1"
+	installNamespace := "custom-agent-namespace"
+	config := newTestAddOnDeploymentConfig(clusterName, "install-namespace-config", installNamespace)
+	addon := newTestAddOn(common.AddonName, clusterName)
+	addon.Status.ConfigReferences = newTestConfigReferences(config)
+	fakeAddonClient := fakeaddon.NewSimpleClientset(config)
+	deploymentConfigGetter := utils.NewAddOnDeploymentConfigGetter(fakeAddonClient)
+
+	manifests := renderTestManifestsWithNamespaceFunc(
+		t,
+		newTestCluster(clusterName),
+		addon,
+		utils.AgentInstallNamespaceFromDeploymentConfigFunc(deploymentConfigGetter),
+		GetDefaultValues("imageName1", nil),
+		addonfactory.GetAddOnDeploymentConfigValues(
+			deploymentConfigGetter,
+			addonfactory.ToAddOnDeploymentConfigValues,
+		),
+	)
+
+	var agentDeployment *appsv1.Deployment
+	for _, manifest := range manifests {
+		obj, ok := manifest.(metav1.ObjectMetaAccessor)
+		assert.True(t, ok, "invalid manifest")
+		if namespace, ok := manifest.(*corev1.Namespace); ok {
+			assert.Equal(t, installNamespace, namespace.Name)
+			continue
+		}
+		if ns := obj.GetObjectMeta().GetNamespace(); len(ns) > 0 {
+			assert.Equalf(t, installNamespace, ns, "unexpected ns of manifest %q", obj.GetObjectMeta().GetName())
+		}
+		if deployment, ok := manifest.(*appsv1.Deployment); ok {
+			agentDeployment = deployment
+		}
+	}
+	if assert.NotNil(t, agentDeployment, "expected addon agent Deployment manifest") {
+		assert.Equal(t, installNamespace, agentDeployment.Namespace)
+	}
+}
+
+func TestManifestAddonAgentRequiresDeploymentConfigSpecHash(t *testing.T) {
+	clusterName := "cluster1"
+	config := newTestAddOnDeploymentConfig(clusterName, "install-namespace-config", "custom-agent-namespace")
+	addon := newTestAddOn(common.AddonName, clusterName)
+	addon.Status.ConfigReferences = []addonv1beta1.ConfigReference{
+		{
+			ConfigGroupResource: addonv1beta1.ConfigGroupResource{
+				Group:    utils.AddOnDeploymentConfigGVR.Group,
+				Resource: utils.AddOnDeploymentConfigGVR.Resource,
+			},
+			DesiredConfig: &addonv1beta1.ConfigSpecHash{
+				ConfigReferent: addonv1beta1.ConfigReferent{
+					Namespace: config.Namespace,
+					Name:      config.Name,
+				},
+			},
+		},
+	}
+	fakeAddonClient := fakeaddon.NewSimpleClientset(config)
+	deploymentConfigGetter := utils.NewAddOnDeploymentConfigGetter(fakeAddonClient)
+
+	agentFactory := addonfactory.NewAgentAddonFactory(common.AddonName, FS, "manifests/charts/managed-serviceaccount-agent").
+		WithScheme(NewAgentScheme()).
+		WithAgentInstallNamespace(utils.AgentInstallNamespaceFromDeploymentConfigFunc(deploymentConfigGetter)).
+		WithGetValuesFuncs(
+			GetDefaultValues("imageName1", nil),
+			addonfactory.GetAddOnDeploymentConfigValues(
+				deploymentConfigGetter,
+				addonfactory.ToAddOnDeploymentConfigValues,
+			),
+		)
+
+	addOnAgent, err := agentFactory.BuildHelmAgentAddon()
+	assert.NoError(t, err)
+
+	_, err = addOnAgent.Manifests(context.Background(), newTestCluster(clusterName), addon)
+	assert.ErrorContains(t, err, "deployment config desired spec hash is empty")
 }
 
 func assertAgentSecurityContext(t *testing.T, deployment *appsv1.Deployment) {
@@ -420,11 +501,24 @@ func renderTestManifests(
 	addon *addonv1beta1.ManagedClusterAddOn,
 	getValuesFuncs ...addonfactory.GetValuesFunc,
 ) []runtime.Object {
+	return renderTestManifestsWithNamespaceFunc(t, cluster, addon, nil, getValuesFuncs...)
+}
+
+func renderTestManifestsWithNamespaceFunc(
+	t *testing.T,
+	cluster *clusterv1.ManagedCluster,
+	addon *addonv1beta1.ManagedClusterAddOn,
+	agentInstallNamespace agent.AgentInstallNamespaceFunc,
+	getValuesFuncs ...addonfactory.GetValuesFunc,
+) []runtime.Object {
 	t.Helper()
 
 	agentFactory := addonfactory.NewAgentAddonFactory(common.AddonName, FS, "manifests/charts/managed-serviceaccount-agent").
 		WithScheme(NewAgentScheme()).
 		WithGetValuesFuncs(getValuesFuncs...)
+	if agentInstallNamespace != nil {
+		agentFactory = agentFactory.WithAgentInstallNamespace(agentInstallNamespace)
+	}
 
 	addOnAgent, err := agentFactory.BuildHelmAgentAddon()
 	assert.NoError(t, err)
@@ -437,39 +531,21 @@ func renderTestManifests(
 
 func renderWithConfig(t *testing.T, clusterName, addonName, imageName string, variables ...addonv1beta1.CustomizedVariable) []runtime.Object {
 	t.Helper()
-	config := &addonv1beta1.AddOnDeploymentConfig{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "metrics-config",
-			Namespace: clusterName,
-		},
-		Spec: addonv1beta1.AddOnDeploymentConfigSpec{
-			CustomizedVariables: variables,
-		},
-	}
+	config := newTestAddOnDeploymentConfig(clusterName, "metrics-config", addonName)
+	config.Spec.CustomizedVariables = variables
 	addon := newTestAddOn(addonName, clusterName)
-	addon.Status.ConfigReferences = []addonv1beta1.ConfigReference{
-		{
-			ConfigGroupResource: addonv1beta1.ConfigGroupResource{
-				Group:    utils.AddOnDeploymentConfigGVR.Group,
-				Resource: utils.AddOnDeploymentConfigGVR.Resource,
-			},
-			DesiredConfig: &addonv1beta1.ConfigSpecHash{
-				ConfigReferent: addonv1beta1.ConfigReferent{
-					Namespace: config.Namespace,
-					Name:      config.Name,
-				},
-				SpecHash: "hash",
-			},
-		},
-	}
+	addon.Status.ConfigReferences = newTestConfigReferences(config)
+	fakeAddonClient := fakeaddon.NewSimpleClientset(config)
+	deploymentConfigGetter := utils.NewAddOnDeploymentConfigGetter(fakeAddonClient)
 
-	return renderTestManifests(
+	return renderTestManifestsWithNamespaceFunc(
 		t,
 		newTestCluster(clusterName),
 		addon,
+		utils.AgentInstallNamespaceFromDeploymentConfigFunc(deploymentConfigGetter),
 		GetDefaultValues(imageName, nil),
 		addonfactory.GetAddOnDeploymentConfigValues(
-			utils.NewAddOnDeploymentConfigGetter(fakeaddon.NewSimpleClientset(config)),
+			deploymentConfigGetter,
 			addonfactory.ToAddOnDeploymentConfigValues,
 			ToAddOnPrometheusValues,
 		),
@@ -499,9 +575,38 @@ func newTestCluster(name string) *clusterv1.ManagedCluster {
 func newTestAddOn(name, namespace string) *addonv1beta1.ManagedClusterAddOn {
 	return &addonv1beta1.ManagedClusterAddOn{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:        name,
-			Namespace:   namespace,
-			Annotations: map[string]string{addonv1beta1.InstallNamespaceAnnotation: name},
+			Name:      name,
+			Namespace: namespace,
+		},
+	}
+}
+
+func newTestAddOnDeploymentConfig(clusterName, name, installNamespace string) *addonv1beta1.AddOnDeploymentConfig {
+	return &addonv1beta1.AddOnDeploymentConfig{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: clusterName,
+		},
+		Spec: addonv1beta1.AddOnDeploymentConfigSpec{
+			AgentInstallNamespace: installNamespace,
+		},
+	}
+}
+
+func newTestConfigReferences(config *addonv1beta1.AddOnDeploymentConfig) []addonv1beta1.ConfigReference {
+	return []addonv1beta1.ConfigReference{
+		{
+			ConfigGroupResource: addonv1beta1.ConfigGroupResource{
+				Group:    utils.AddOnDeploymentConfigGVR.Group,
+				Resource: utils.AddOnDeploymentConfigGVR.Resource,
+			},
+			DesiredConfig: &addonv1beta1.ConfigSpecHash{
+				ConfigReferent: addonv1beta1.ConfigReferent{
+					Namespace: config.Namespace,
+					Name:      config.Name,
+				},
+				SpecHash: "hash",
+			},
 		},
 	}
 }
