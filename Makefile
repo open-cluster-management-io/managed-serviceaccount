@@ -14,7 +14,7 @@ GOBIN=$(shell go env GOBIN)
 endif
 
 export DOCKER_BUILDER ?= docker
-export CGO_ENABLED = 0
+export CGO_ENABLED ?= 1
 export GOFLAGS ?=
 GO_BUILD_FLAGS ?= -a
 GO_BUILD_LDFLAGS ?=
