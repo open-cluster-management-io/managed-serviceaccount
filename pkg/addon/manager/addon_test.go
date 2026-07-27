@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -184,20 +185,20 @@ func TestManifestAddonAgent(t *testing.T) {
 	}{
 		{
 			name:                  "install",
-			getValuesFunc:         []addonfactory.GetValuesFunc{GetDefaultValues(imageName, nil)},
+			getValuesFunc:         []addonfactory.GetValuesFunc{GetDefaultValues(imageName, nil, false)},
 			expectedManifestNames: manifestNames,
 			expectedImage:         imageName,
 		},
 		{
 			name:                  "install all with image pull secret",
-			getValuesFunc:         []addonfactory.GetValuesFunc{GetDefaultValues(imageName, newTestImagePullSecret())},
+			getValuesFunc:         []addonfactory.GetValuesFunc{GetDefaultValues(imageName, newTestImagePullSecret(), false)},
 			expectedManifestNames: append(manifestNames, "open-cluster-management-image-pull-credentials"),
 			expectedImage:         imageName,
 		},
 		{
 			name: "node placement is rendered on the agent deployment",
 			getValuesFunc: []addonfactory.GetValuesFunc{
-				GetDefaultValues(imageName, nil),
+				GetDefaultValues(imageName, nil, false),
 				getNodePlacementValues(
 					map[string]string{"kubernetes.io/os": "linux"},
 					[]corev1.Toleration{{Key: "foo", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoExecute}},
@@ -290,7 +291,7 @@ func TestGetDefaultValuesRequiresDockerConfigJsonKey(t *testing.T) {
 			imagePullSecret := newTestImagePullSecret()
 			imagePullSecret.Data = c.data
 
-			values, err := GetDefaultValues("imageName1", imagePullSecret)(newTestCluster("cluster1"), newTestAddOn(common.AddonName, "cluster1"))
+			values, err := GetDefaultValues("imageName1", imagePullSecret, false)(newTestCluster("cluster1"), newTestAddOn(common.AddonName, "cluster1"))
 
 			assert.Nil(t, values)
 			assert.ErrorContains(t, err, `missing ".dockerconfigjson"`)
@@ -365,7 +366,7 @@ func TestManifestAddonServiceMonitor(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			manifests := renderWithConfig(t, clusterName, "addon1", "imageName1", c.variables...)
+			manifests := renderWithConfig(t, clusterName, "addon1", "imageName1", false, c.variables...)
 
 			var serviceMonitor *unstructured.Unstructured
 			for _, manifest := range manifests {
@@ -381,6 +382,68 @@ func TestManifestAddonServiceMonitor(t *testing.T) {
 				assert.Equal(t, "managed-serviceaccount-addon-agent", serviceMonitor.GetName())
 				assert.Equal(t, c.expectedLabels, serviceMonitor.GetLabels())
 			}
+		})
+	}
+}
+
+func TestManifestAddonNetworkPolicy(t *testing.T) {
+	clusterName := "cluster1"
+	addonName := "addon1"
+	imageName := "imageName1"
+
+	cases := []struct {
+		name                  string
+		enableNetworkPolicies bool
+		prometheusEnabled     bool
+		expectNetworkPolicy   bool
+		expectMetricsIngress  bool
+	}{
+		{
+			name:                  "disabled by default",
+			enableNetworkPolicies: false,
+			expectNetworkPolicy:   false,
+		},
+		{
+			name:                  "enabled without prometheus has no metrics ingress",
+			enableNetworkPolicies: true,
+			expectNetworkPolicy:   true,
+			expectMetricsIngress:  false,
+		},
+		{
+			name:                  "enabled with prometheus opens metrics ingress",
+			enableNetworkPolicies: true,
+			prometheusEnabled:     true,
+			expectNetworkPolicy:   true,
+			expectMetricsIngress:  true,
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			var variables []addonv1beta1.CustomizedVariable
+			if c.prometheusEnabled {
+				variables = []addonv1beta1.CustomizedVariable{
+					{Name: prometheusEnabledVariableName, Value: "true"},
+				}
+			}
+			manifests := renderWithConfig(t, clusterName, addonName, imageName, c.enableNetworkPolicies, variables...)
+
+			np := getAgentNetworkPolicy(manifests)
+			if !c.expectNetworkPolicy {
+				assert.Nil(t, np, "NetworkPolicy should not be rendered when disabled")
+				return
+			}
+			if !assert.NotNil(t, np, "expected agent NetworkPolicy") {
+				return
+			}
+			assert.Equal(t, "managed-serviceaccount-addon-agent-network-policy", np.Name)
+			assert.Contains(t, np.Spec.PolicyTypes, networkingv1.PolicyTypeIngress)
+			assert.Contains(t, np.Spec.PolicyTypes, networkingv1.PolicyTypeEgress)
+			assert.True(t, networkPolicyAllowsEgressTCPPort(np, 443))
+			assert.True(t, networkPolicyAllowsEgressTCPPort(np, 6443))
+			hasMetricsIngress := networkPolicyAllowsIngressTCPPort(np, 38080)
+			assert.Equal(t, c.expectMetricsIngress, hasMetricsIngress)
+			assert.True(t, networkPolicyAllowsIngressTCPPort(np, 8000),
+				"health :8000 must be opened for kubelet livenessProbe")
 		})
 	}
 }
@@ -435,7 +498,7 @@ func renderTestManifests(
 	return manifests
 }
 
-func renderWithConfig(t *testing.T, clusterName, addonName, imageName string, variables ...addonv1beta1.CustomizedVariable) []runtime.Object {
+func renderWithConfig(t *testing.T, clusterName, addonName, imageName string, enableNetworkPolicies bool, variables ...addonv1beta1.CustomizedVariable) []runtime.Object {
 	t.Helper()
 	config := &addonv1beta1.AddOnDeploymentConfig{
 		ObjectMeta: metav1.ObjectMeta{
@@ -467,13 +530,64 @@ func renderWithConfig(t *testing.T, clusterName, addonName, imageName string, va
 		t,
 		newTestCluster(clusterName),
 		addon,
-		GetDefaultValues(imageName, nil),
+		GetDefaultValues(imageName, nil, enableNetworkPolicies),
 		addonfactory.GetAddOnDeploymentConfigValues(
 			utils.NewAddOnDeploymentConfigGetter(fakeaddon.NewSimpleClientset(config)),
 			addonfactory.ToAddOnDeploymentConfigValues,
 			ToAddOnPrometheusValues,
 		),
 	)
+}
+
+func getAgentNetworkPolicy(manifests []runtime.Object) *networkingv1.NetworkPolicy {
+	for _, manifest := range manifests {
+		if np, ok := manifest.(*networkingv1.NetworkPolicy); ok {
+			if np.Name == "managed-serviceaccount-addon-agent-network-policy" {
+				return np
+			}
+		}
+	}
+	return nil
+}
+
+func networkPolicyAllowsEgressTCPPort(np *networkingv1.NetworkPolicy, port int32) bool {
+	if np == nil {
+		return false
+	}
+	for _, rule := range np.Spec.Egress {
+		if len(rule.Ports) == 0 {
+			continue
+		}
+		for _, p := range rule.Ports {
+			if p.Protocol != nil && *p.Protocol != corev1.ProtocolTCP {
+				continue
+			}
+			if p.Port != nil && p.Port.IntVal == port {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func networkPolicyAllowsIngressTCPPort(np *networkingv1.NetworkPolicy, port int32) bool {
+	if np == nil {
+		return false
+	}
+	for _, rule := range np.Spec.Ingress {
+		if len(rule.Ports) == 0 {
+			continue
+		}
+		for _, p := range rule.Ports {
+			if p.Protocol != nil && *p.Protocol != corev1.ProtocolTCP {
+				continue
+			}
+			if p.Port != nil && p.Port.IntVal == port {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func newTestImagePullSecret() *corev1.Secret {

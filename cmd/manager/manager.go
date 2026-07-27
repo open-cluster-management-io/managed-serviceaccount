@@ -106,17 +106,20 @@ func (o *HubManagerOptions) AddFlags(flags *pflag.FlagSet) {
 		"The image pull secret that addon agent will use. "+
 			"When specified, the content of image pull secret in the manager namespace on hub will be copied to the agent namespace on the managed cluster."+
 			"This can also be configured with environment variable AGENT_IMAGE_PULL_SECRET.")
+	flags.BoolVar(&o.EnableNetworkPolicies, "enable-network-policies", false,
+		"Enable NetworkPolicies for the managed-cluster managed-serviceaccount addon-agent")
 }
 
 // HubManagerOptions holds configuration for hub manager controller
 type HubManagerOptions struct {
-	MetricsAddr          string
-	EnableLeaderElection bool
-	ProbeAddr            string
-	AddonAgentImageName  string
-	ImagePullSecretName  string
-	DeployMode           string
-	FeatureGatesFlags    map[string]bool
+	MetricsAddr           string
+	EnableLeaderElection  bool
+	ProbeAddr             string
+	AddonAgentImageName   string
+	ImagePullSecretName   string
+	DeployMode            string
+	FeatureGatesFlags     map[string]bool
+	EnableNetworkPolicies bool
 }
 
 // NewHubManagerOptions returns a HubManagerOptions
@@ -215,7 +218,7 @@ func (o *HubManagerOptions) Run() error {
 			WithScheme(manager.NewAgentScheme()).
 			WithConfigGVRs(utils.AddOnDeploymentConfigGVR).
 			WithGetValuesFuncs(
-				manager.GetDefaultValues(o.AddonAgentImageName, imagePullSecret),
+				manager.GetDefaultValues(o.AddonAgentImageName, imagePullSecret, o.EnableNetworkPolicies),
 				addonfactory.GetAgentImageValues(
 					utils.NewAddOnDeploymentConfigGetter(addonClient),
 					"Image",

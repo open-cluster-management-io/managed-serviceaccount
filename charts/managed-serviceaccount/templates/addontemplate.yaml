@@ -107,6 +107,47 @@ spec:
             port: 38080
             targetPort: metrics
             protocol: TCP
+{{- if .Values.networkPolicies.enabled }}
+      - apiVersion: networking.k8s.io/v1
+        kind: NetworkPolicy
+        metadata:
+          name: managed-serviceaccount-addon-agent-network-policy
+          namespace: open-cluster-management-agent-addon
+          labels:
+            addon-agent: managed-serviceaccount
+        spec:
+          podSelector:
+            matchLabels:
+              addon-agent: managed-serviceaccount
+          policyTypes:
+          - Ingress
+          - Egress
+          ingress:
+          # kubelet livenessProbe /healthz
+          - ports:
+            - protocol: TCP
+              port: 8000
+          {{- if .Values.prometheus.enabled }}
+          - ports:
+            - protocol: TCP
+              port: 38080
+          {{- end }}
+          egress:
+          - ports:
+            - protocol: UDP
+              port: 53
+            - protocol: TCP
+              port: 53
+            - protocol: UDP
+              port: 5353
+            - protocol: TCP
+              port: 5353
+          - ports:
+            - protocol: TCP
+              port: 443
+            - protocol: TCP
+              port: 6443
+{{- end }}
 {{- if .Values.prometheus.enabled }}
       - apiVersion: monitoring.coreos.com/v1
         kind: ServiceMonitor
