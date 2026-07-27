@@ -57,10 +57,13 @@ func NewAgentScheme() *runtime.Scheme {
 	return s
 }
 
-func GetDefaultValues(image string, imagePullSecret *corev1.Secret) addonfactory.GetValuesFunc {
+func GetDefaultValues(image string, imagePullSecret *corev1.Secret, enableNetworkPolicies bool) addonfactory.GetValuesFunc {
 	return func(_ *clusterv1.ManagedCluster, _ *addonv1beta1.ManagedClusterAddOn) (addonfactory.Values, error) {
 		values := addonfactory.Values{
 			"Image": image,
+			"networkPolicies": map[string]interface{}{
+				"enabled": enableNetworkPolicies,
+			},
 		}
 
 		if imagePullSecret != nil {

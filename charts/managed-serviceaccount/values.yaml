@@ -26,3 +26,12 @@ hubDeployMode: Deployment
 
 # Name of the managed service-account addon template, only used when hubDeployMode is AddOnTemplate
 addOnTemplateName: managed-serviceaccount
+
+# Opt-in NetworkPolicies for the hub addon-manager and the managed-cluster
+# addon-agent (via manager flag --enable-network-policies, or embedded in
+# AddOnTemplate when hubDeployMode=AddOnTemplate). Default false so community
+# installs are unchanged. Policies use port-based peers for portability across
+# Kubernetes vendors. Metrics ingress (:38080) is opened only when prometheus
+# is enabled.
+networkPolicies:
+  enabled: false

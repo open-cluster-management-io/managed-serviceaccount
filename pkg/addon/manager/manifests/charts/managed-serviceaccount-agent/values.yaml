@@ -17,3 +17,8 @@ Prometheus:
   Enabled: false
   ServiceMonitor:
     Labels: {}
+
+# Set by the hub addon-manager from --enable-network-policies
+# (charts/managed-serviceaccount values networkPolicies.enabled).
+networkPolicies:
+  enabled: false

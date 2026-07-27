@@ -40,6 +40,7 @@ spec:
             - --deploy-mode={{ .Values.hubDeployMode }}
             - --metrics-bind-address=:38080
             - --agent-image-name={{ $image }}
+            - --enable-network-policies={{ .Values.networkPolicies.enabled }}
             {{- if .Values.featureGates }}
             - --feature-gates=EphemeralIdentity={{ .Values.featureGates.ephemeralIdentity | default false}},ClusterProfile={{ .Values.featureGates.clusterProfile | default false}}
             {{- end }}
