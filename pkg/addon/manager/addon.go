@@ -130,7 +130,7 @@ func setupPermission(nativeClient kubernetes.Interface) agent.PermissionConfigFu
 			Rules: []rbacv1.PolicyRule{
 				{
 					APIGroups: []string{""},
-					Verbs:     []string{"get", "list", "watch", "create", "update"},
+					Verbs:     []string{"get", "list", "watch", "create", "update", "delete"},
 					Resources: []string{"secrets"},
 				},
 				{
