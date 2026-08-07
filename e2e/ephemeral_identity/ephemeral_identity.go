@@ -33,7 +33,7 @@ var _ = Describe("Ephemeral ManagedServiceAccount Test", Label("ephemeral"), fun
 				Namespace: f.TestClusterName(),
 				Name:      targetName,
 				Finalizers: []string{
-					"prevent-resource-removal",
+					"e2e.open-cluster-management.io/prevent-resource-removal",
 				},
 			},
 			Spec: authv1beta1.ManagedServiceAccountSpec{

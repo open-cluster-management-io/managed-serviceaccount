@@ -29,8 +29,9 @@ The addon follows the standard OCM [addon architecture](https://open-cluster-man
 
 The managed service account addon supports 2 installation ways:
 
-- **default (manager - agent)**: Full deployment with both addon manager and addon agent components
-- **addontemplate (only agent)**: Lightweight deployment with only the addon agent component
+- **default (manager - agent)**: Full deployment with both addon manager and addon agent components.
+- **addontemplate**: Addon-manager driven install with the addon agent by default. Enabling
+  `featureGates.clusterProfile=true` also deploys the hub manager.
 
 ## Installation
 

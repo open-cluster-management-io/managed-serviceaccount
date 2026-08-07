@@ -20,6 +20,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	clientauthenticationv1 "k8s.io/client-go/pkg/apis/clientauthentication/v1"
 	cpv1alpha1 "sigs.k8s.io/cluster-inventory-api/apis/v1alpha1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	clusterv1 "open-cluster-management.io/api/cluster/v1"
 	authv1beta1 "open-cluster-management.io/managed-serviceaccount/apis/authentication/v1beta1"
@@ -33,92 +34,164 @@ const (
 	pollTimeout                 = 60 * time.Second
 )
 
+func createClusterProfileFixture(f framework.Framework, namespace, targetClusterName string) string {
+	GinkgoHelper()
+
+	By("Creating namespace for ClusterProfile: " + namespace)
+	ns := &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: namespace,
+		},
+	}
+	err := f.HubRuntimeClient().Create(context.TODO(), ns)
+	Expect(err).NotTo(HaveOccurred())
+
+	By("Creating ClusterProfile for target cluster: " + targetClusterName)
+	clusterProfile := &cpv1alpha1.ClusterProfile{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      targetClusterName,
+			Namespace: namespace,
+			Labels: map[string]string{
+				cpv1alpha1.LabelClusterManagerKey: controller.ClusterProfileManagerName,
+				clusterv1.ClusterNameLabelKey:     targetClusterName,
+			},
+		},
+		Spec: cpv1alpha1.ClusterProfileSpec{
+			DisplayName: targetClusterName,
+			ClusterManager: cpv1alpha1.ClusterManager{
+				Name: controller.ClusterProfileManagerName,
+			},
+		},
+	}
+	err = f.HubRuntimeClient().Create(context.TODO(), clusterProfile)
+	Expect(err).NotTo(HaveOccurred())
+
+	return namespace
+}
+
+func deleteAndWaitForNotFound(
+	ctx context.Context,
+	f framework.Framework,
+	object client.Object,
+	key types.NamespacedName,
+) {
+	GinkgoHelper()
+
+	runtimeClient := f.HubRuntimeClient()
+	err := runtimeClient.Delete(ctx, object)
+	Expect(client.IgnoreNotFound(err)).To(Succeed())
+
+	Eventually(func(ctx context.Context) error {
+		err := runtimeClient.Get(ctx, key, object)
+		if apierrors.IsNotFound(err) {
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("get %T %s: %w", object, key, err)
+		}
+		return fmt.Errorf("%T %s still exists", object, key)
+	}).WithContext(ctx).WithTimeout(pollTimeout).WithPolling(pollInterval).Should(Succeed())
+}
+
+func cleanupClusterProfileFixture(ctx context.Context, f framework.Framework, namespace, targetClusterName string) {
+	GinkgoHelper()
+	if namespace == "" {
+		return
+	}
+
+	By("Cleaning up ClusterProfile: " + namespace + "/" + targetClusterName)
+	clusterProfile := &cpv1alpha1.ClusterProfile{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: namespace,
+			Name:      targetClusterName,
+		},
+	}
+	deleteAndWaitForNotFound(ctx, f, clusterProfile, types.NamespacedName{
+		Namespace: namespace,
+		Name:      targetClusterName,
+	})
+
+	By("Cleaning up ClusterProfile namespace: " + namespace)
+	ns := &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: namespace,
+		},
+	}
+	deleteAndWaitForNotFound(ctx, f, ns, types.NamespacedName{Name: namespace})
+}
+
+func cleanupManagedServiceAccount(ctx context.Context, f framework.Framework, namespace, name string) {
+	GinkgoHelper()
+	if name == "" {
+		return
+	}
+
+	By("Cleaning up ManagedServiceAccount: " + namespace + "/" + name)
+	msa := &authv1beta1.ManagedServiceAccount{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: namespace,
+			Name:      name,
+		},
+	}
+	deleteAndWaitForNotFound(ctx, f, msa, types.NamespacedName{
+		Namespace: namespace,
+		Name:      name,
+	})
+}
+
+func cleanupSyncedCredential(
+	ctx context.Context,
+	f framework.Framework,
+	clusterProfileNamespace, targetClusterName, msaName string,
+) {
+	GinkgoHelper()
+	if clusterProfileNamespace == "" || msaName == "" {
+		return
+	}
+
+	secretName := fmt.Sprintf("%s-%s", targetClusterName, msaName)
+	By("Cleaning up synced credential: " + clusterProfileNamespace + "/" + secretName)
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: clusterProfileNamespace,
+			Name:      secretName,
+		},
+	}
+	deleteAndWaitForNotFound(ctx, f, secret, types.NamespacedName{
+		Namespace: clusterProfileNamespace,
+		Name:      secretName,
+	})
+}
+
 var _ = Describe("ClusterProfile Credentials Sync and Plugin Test", Label("clusterprofile"),
 	func() {
 		f := framework.NewE2EFramework(clusterProfileCredsBasename)
 		targetClusterName := f.TestClusterName() // This will be used as both namespace and ClusterProfile name
-		msaName1 := "e2e-msa-" + framework.RunID + "-1"
-		msaName2 := "e2e-msa-" + framework.RunID + "-2"
 
 		Context("ClusterProfileCredSyncer Controller", func() {
-			var clusterProfile *cpv1alpha1.ClusterProfile
 			var clusterProfileNamespace string
 			var testCounter int
+			var msaName1 string
+			var msaName2 string
 
 			BeforeEach(func() {
-				// Create a unique namespace for this test's ClusterProfile (unique per test iteration)
 				testCounter++
-				clusterProfileNamespace = fmt.Sprintf("cp-test-%s-%d", framework.RunID, testCounter)
-				By("Creating namespace for ClusterProfile: " + clusterProfileNamespace)
-				ns := &corev1.Namespace{
-					ObjectMeta: metav1.ObjectMeta{
-						Name: clusterProfileNamespace,
-					},
-				}
-				err := f.HubRuntimeClient().Create(context.TODO(), ns)
-				Expect(err).NotTo(HaveOccurred())
-
-				By("Creating ClusterProfile in dynamic test namespace")
-				clusterProfile = &cpv1alpha1.ClusterProfile{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      targetClusterName,
-						Namespace: clusterProfileNamespace,
-						Labels: map[string]string{
-							cpv1alpha1.LabelClusterManagerKey: controller.ClusterProfileManagerName,
-							clusterv1.ClusterNameLabelKey:     targetClusterName,
-						},
-					},
-					Spec: cpv1alpha1.ClusterProfileSpec{
-						DisplayName: targetClusterName,
-						ClusterManager: cpv1alpha1.ClusterManager{
-							Name: controller.ClusterProfileManagerName,
-						},
-					},
-				}
-				err = f.HubRuntimeClient().Create(context.TODO(), clusterProfile)
-				Expect(err).NotTo(HaveOccurred())
+				msaName1 = fmt.Sprintf("e2e-msa-%s-controller-%d-1", framework.RunID, testCounter)
+				msaName2 = fmt.Sprintf("e2e-msa-%s-controller-%d-2", framework.RunID, testCounter)
+				clusterProfileNamespace = createClusterProfileFixture(
+					f,
+					fmt.Sprintf("cp-controller-test-%s-%d", framework.RunID, testCounter),
+					targetClusterName,
+				)
 			})
 
-			AfterEach(func() {
-				By("Cleaning up ClusterProfile")
-				if clusterProfile != nil {
-					err := f.HubRuntimeClient().Delete(context.TODO(), clusterProfile)
-					if err != nil && !apierrors.IsNotFound(err) {
-						Expect(err).NotTo(HaveOccurred())
-					}
-
-					// Wait for ClusterProfile to be deleted
-					Eventually(func() bool {
-						cp := &cpv1alpha1.ClusterProfile{}
-						err := f.HubRuntimeClient().Get(context.TODO(), types.NamespacedName{
-							Namespace: clusterProfileNamespace,
-							Name:      targetClusterName,
-						}, cp)
-						return apierrors.IsNotFound(err)
-					}).WithTimeout(pollTimeout).WithPolling(pollInterval).Should(BeTrue())
-				}
-				By("Cleaning up ClusterProfile namespace")
-				if clusterProfileNamespace != "" {
-					ns := &corev1.Namespace{
-						ObjectMeta: metav1.ObjectMeta{
-							Name: clusterProfileNamespace,
-						},
-					}
-					err := f.HubRuntimeClient().Delete(context.TODO(), ns)
-					if err != nil && !apierrors.IsNotFound(err) {
-						Expect(err).NotTo(HaveOccurred())
-					}
-
-					// Wait for namespace to be fully deleted
-					Eventually(func() bool {
-						ns := &corev1.Namespace{}
-						err := f.HubRuntimeClient().Get(context.TODO(), types.NamespacedName{
-							Name: clusterProfileNamespace,
-						}, ns)
-						return apierrors.IsNotFound(err)
-					}).WithTimeout(pollTimeout).WithPolling(pollInterval).Should(BeTrue())
-				}
-			})
+			AfterEach(func(ctx SpecContext) {
+				cleanupManagedServiceAccount(ctx, f, targetClusterName, msaName1)
+				cleanupManagedServiceAccount(ctx, f, targetClusterName, msaName2)
+				cleanupSyncedCredential(ctx, f, clusterProfileNamespace, targetClusterName, msaName1)
+				cleanupSyncedCredential(ctx, f, clusterProfileNamespace, targetClusterName, msaName2)
+				cleanupClusterProfileFixture(ctx, f, clusterProfileNamespace, targetClusterName)
+			}, NodeTimeout(7*pollTimeout))
 
 			It("Should sync ManagedServiceAccount token secrets to ClusterProfile namespace", func() {
 				By("Creating ManagedServiceAccount in cluster namespace")
@@ -356,6 +429,12 @@ var _ = Describe("ClusterProfile Credentials Sync and Plugin Test", Label("clust
 				}).WithTimeout(pollTimeout).WithPolling(pollInterval).Should(BeTrue())
 
 				By("Deleting ClusterProfile")
+				clusterProfile := &cpv1alpha1.ClusterProfile{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: clusterProfileNamespace,
+						Name:      targetClusterName,
+					},
+				}
 				err = f.HubRuntimeClient().Delete(context.TODO(), clusterProfile)
 				Expect(err).NotTo(HaveOccurred())
 
@@ -368,15 +447,34 @@ var _ = Describe("ClusterProfile Credentials Sync and Plugin Test", Label("clust
 					}, secret)
 					return apierrors.IsNotFound(err)
 				}).WithTimeout(pollTimeout).WithPolling(pollInterval).Should(BeTrue())
+			})
 
-				By("Cleaning up ManagedServiceAccount")
-				err = f.HubRuntimeClient().Delete(context.TODO(), msa)
-				if err != nil && !apierrors.IsNotFound(err) {
-					Expect(err).NotTo(HaveOccurred())
+			It("Should ignore ManagedServiceAccounts without the ClusterProfile sync label", func() {
+				By("Creating ManagedServiceAccount without sync label")
+				msa := &authv1beta1.ManagedServiceAccount{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: targetClusterName,
+						Name:      msaName1,
+					},
+					Spec: authv1beta1.ManagedServiceAccountSpec{
+						Rotation: authv1beta1.ManagedServiceAccountRotation{
+							Validity: metav1.Duration{Duration: time.Minute * 30},
+						},
+					},
 				}
+				err := f.HubRuntimeClient().Create(context.TODO(), msa)
+				Expect(err).NotTo(HaveOccurred())
 
-				// Set to nil so AfterEach doesn't try to delete again
-				clusterProfile = nil
+				syncedSecretName := fmt.Sprintf("%s-%s", targetClusterName, msaName1)
+				By("Verifying synced secret is not created")
+				Consistently(func() bool {
+					secret := &corev1.Secret{}
+					err := f.HubRuntimeClient().Get(context.TODO(), types.NamespacedName{
+						Namespace: clusterProfileNamespace,
+						Name:      syncedSecretName,
+					}, secret)
+					return apierrors.IsNotFound(err)
+				}).WithTimeout(10 * time.Second).WithPolling(pollInterval).Should(BeTrue())
 			})
 
 			It("Should update synced secret when ManagedServiceAccount token changes", func() {
@@ -622,23 +720,19 @@ var _ = Describe("ClusterProfile Credentials Sync and Plugin Test", Label("clust
 		})
 
 		Context("ClusterProfile Credentials Plugin", func() {
-			var clusterProfile *cpv1alpha1.ClusterProfile
 			var pluginPath string
 			var clusterProfileNamespace string
 			var testCounter int
+			var msaName1 string
 
 			BeforeEach(func() {
-				// Create a unique namespace for this test's ClusterProfile (unique per test iteration)
 				testCounter++
-				clusterProfileNamespace = fmt.Sprintf("cp-plugin-test-%s-%d", framework.RunID, testCounter)
-				By("Creating namespace for ClusterProfile: " + clusterProfileNamespace)
-				ns := &corev1.Namespace{
-					ObjectMeta: metav1.ObjectMeta{
-						Name: clusterProfileNamespace,
-					},
-				}
-				err := f.HubRuntimeClient().Create(context.TODO(), ns)
-				Expect(err).NotTo(HaveOccurred())
+				msaName1 = fmt.Sprintf("e2e-msa-%s-plugin-%d", framework.RunID, testCounter)
+				clusterProfileNamespace = createClusterProfileFixture(
+					f,
+					fmt.Sprintf("cp-plugin-test-%s-%d", framework.RunID, testCounter),
+					targetClusterName,
+				)
 
 				By("Building the credentials plugin binary")
 				tmpDir := GinkgoT().TempDir()
@@ -646,58 +740,13 @@ var _ = Describe("ClusterProfile Credentials Sync and Plugin Test", Label("clust
 				cmd := exec.Command("go", "build", "-o", pluginPath, "./cmd/clusterprofile-credentials-plugin")
 				output, err := cmd.CombinedOutput()
 				Expect(err).NotTo(HaveOccurred(), "Failed to build plugin: %s", string(output))
-
-				By("Creating ClusterProfile")
-				clusterProfile = &cpv1alpha1.ClusterProfile{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      targetClusterName,
-						Namespace: clusterProfileNamespace,
-						Labels: map[string]string{
-							cpv1alpha1.LabelClusterManagerKey: controller.ClusterProfileManagerName,
-							clusterv1.ClusterNameLabelKey:     targetClusterName,
-						},
-					},
-					Spec: cpv1alpha1.ClusterProfileSpec{
-						DisplayName: targetClusterName,
-						ClusterManager: cpv1alpha1.ClusterManager{
-							Name: controller.ClusterProfileManagerName,
-						},
-					},
-				}
-				err = f.HubRuntimeClient().Create(context.TODO(), clusterProfile)
-				Expect(err).NotTo(HaveOccurred())
 			})
 
-			AfterEach(func() {
-				By("Cleaning up ClusterProfile")
-				if clusterProfile != nil {
-					err := f.HubRuntimeClient().Delete(context.TODO(), clusterProfile)
-					if err != nil && !apierrors.IsNotFound(err) {
-						Expect(err).NotTo(HaveOccurred())
-					}
-				}
-				By("Cleaning up ClusterProfile namespace")
-				if clusterProfileNamespace != "" {
-					ns := &corev1.Namespace{
-						ObjectMeta: metav1.ObjectMeta{
-							Name: clusterProfileNamespace,
-						},
-					}
-					err := f.HubRuntimeClient().Delete(context.TODO(), ns)
-					if err != nil && !apierrors.IsNotFound(err) {
-						Expect(err).NotTo(HaveOccurred())
-					}
-
-					// Wait for namespace to be fully deleted
-					Eventually(func() bool {
-						ns := &corev1.Namespace{}
-						err := f.HubRuntimeClient().Get(context.TODO(), types.NamespacedName{
-							Name: clusterProfileNamespace,
-						}, ns)
-						return apierrors.IsNotFound(err)
-					}).WithTimeout(pollTimeout).WithPolling(pollInterval).Should(BeTrue())
-				}
-			})
+			AfterEach(func(ctx SpecContext) {
+				cleanupManagedServiceAccount(ctx, f, targetClusterName, msaName1)
+				cleanupSyncedCredential(ctx, f, clusterProfileNamespace, targetClusterName, msaName1)
+				cleanupClusterProfileFixture(ctx, f, clusterProfileNamespace, targetClusterName)
+			}, NodeTimeout(7*pollTimeout))
 
 			It("Should retrieve token from synced credential secret", func() {
 				By("Creating ManagedServiceAccount")
@@ -802,6 +851,7 @@ var _ = Describe("ClusterProfile Credentials Sync and Plugin Test", Label("clust
 				cmd := exec.Command(pluginPath, "--managed-serviceaccount=nonexistent")
 				cmd.Stdin = nil
 				cmd.Env = append(os.Environ(),
+					"NAMESPACE="+clusterProfileNamespace,
 					"KUBERNETES_EXEC_INFO="+string(execCredJSON),
 				)
 

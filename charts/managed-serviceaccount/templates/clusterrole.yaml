@@ -30,6 +30,13 @@ rules:
   - apiGroups:
       - addon.open-cluster-management.io
     resources:
+      - clustermanagementaddons/status
+    verbs:
+      - update
+      - patch
+  - apiGroups:
+      - addon.open-cluster-management.io
+    resources:
       - managedclusteraddons
     verbs:
       - get
