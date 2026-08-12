@@ -18,7 +18,7 @@ package manager
 
 import (
 	"context"
-	"flag"
+	"fmt"
 	"os"
 	"strings"
 
@@ -29,6 +29,7 @@ import (
 	"github.com/spf13/pflag"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -39,12 +40,15 @@ import (
 	"k8s.io/klog/v2"
 	cpv1alpha1 "sigs.k8s.io/cluster-inventory-api/apis/v1alpha1"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	"open-cluster-management.io/addon-framework/pkg/addonfactory"
 	"open-cluster-management.io/addon-framework/pkg/addonmanager"
+	"open-cluster-management.io/addon-framework/pkg/agent"
 	"open-cluster-management.io/addon-framework/pkg/utils"
-	addonclient "open-cluster-management.io/api/client/addon/clientset/versioned"
+	addonv1beta1 "open-cluster-management.io/api/addon/v1beta1"
 	authv1beta1 "open-cluster-management.io/managed-serviceaccount/apis/authentication/v1beta1"
 	"open-cluster-management.io/managed-serviceaccount/pkg/addon/commoncontroller"
 	"open-cluster-management.io/managed-serviceaccount/pkg/addon/manager"
@@ -60,8 +64,14 @@ var (
 	setupLog = ctrl.Log.WithName("setup")
 )
 
+const (
+	deployModeDeployment    = "Deployment"
+	deployModeAddOnTemplate = "AddOnTemplate"
+)
+
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
+	utilruntime.Must(addonv1beta1.Install(scheme))
 	utilruntime.Must(authv1beta1.AddToScheme(scheme))
 	utilruntime.Must(cpv1alpha1.AddToScheme(scheme))
 	//+kubebuilder:scaffold:scheme
@@ -94,7 +104,7 @@ func (o *HubManagerOptions) AddFlags(flags *pflag.FlagSet) {
 	flags.BoolVar(&o.EnableLeaderElection, "leader-elect", false,
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
-	flags.StringVar(&o.DeployMode, "deploy-mode", "Deployment",
+	flags.StringVar(&o.DeployMode, "deploy-mode", deployModeDeployment,
 		"Deployment mode for the manager. Valid values: 'Deployment' (default - runs addon manager and optional controllers), "+
 			"'AddOnTemplate' (runs only ClusterProfileCredSyncer controller without addon manager).")
 	flags.Var(
@@ -130,8 +140,11 @@ func NewHubManagerOptions() *HubManagerOptions {
 func (o *HubManagerOptions) Run() error {
 	logger := klog.Background()
 	klog.SetOutput(os.Stdout)
-	klog.InitFlags(flag.CommandLine)
 	ctrl.SetLogger(logger)
+
+	if err := o.validateDeployMode(); err != nil {
+		return err
+	}
 
 	err := features.FeatureGates.SetFromMap(o.FeatureGatesFlags)
 	if err != nil {
@@ -145,6 +158,7 @@ func (o *HubManagerOptions) Run() error {
 		HealthProbeBindAddress: o.ProbeAddr,
 		LeaderElection:         o.EnableLeaderElection,
 		LeaderElectionID:       "managed-serviceaccount-addon-manager",
+		Cache:                  managedServiceAccountCacheOptions(o.DeployMode),
 	})
 	if err != nil {
 		setupLog.Error(err, "unable to start manager")
@@ -161,9 +175,8 @@ func (o *HubManagerOptions) Run() error {
 		os.Exit(1)
 	}
 
-	var addonManager addonmanager.AddonManager
-	if o.DeployMode != "AddOnTemplate" {
-		addonManager, err = addonmanager.New(mgr.GetConfig())
+	if o.DeployMode != deployModeAddOnTemplate {
+		addonManager, err := addonmanager.New(mgr.GetConfig())
 		if err != nil {
 			setupLog.Error(err, "unable to set up addon manager")
 			os.Exit(1)
@@ -172,12 +185,6 @@ func (o *HubManagerOptions) Run() error {
 		nativeClient, err := kubernetes.NewForConfig(mgr.GetConfig())
 		if err != nil {
 			setupLog.Error(err, "unable to instantiate kubernetes native client")
-			os.Exit(1)
-		}
-
-		addonClient, err := addonclient.NewForConfig(mgr.GetConfig())
-		if err != nil {
-			setupLog.Error(err, "unable to instantiate ocm addon client")
 			os.Exit(1)
 		}
 
@@ -201,13 +208,32 @@ func (o *HubManagerOptions) Run() error {
 			os.Exit(1)
 		}
 
-		deploymentConfigGetter := utils.NewAddOnDeploymentConfigGetter(addonClient)
+		if _, err := mgr.GetCache().GetInformer(context.Background(), &addonv1beta1.AddOnDeploymentConfig{}); err != nil {
+			setupLog.Error(err, "unable to initialize addon deployment config cache")
+			os.Exit(1)
+		}
+		deploymentConfigGetter := &cachedAddOnDeploymentConfigGetter{
+			reader: mgr.GetCache(),
+		}
+		agentInstallNamespaceFunc, err := manager.SetupAgentInstallNamespaceResolver(
+			context.Background(),
+			mgr.GetCache(),
+			utils.AgentInstallNamespaceFromDeploymentConfigFunc(deploymentConfigGetter),
+		)
+		if err != nil {
+			setupLog.Error(err, "unable to index managed cluster addon placement")
+			os.Exit(1)
+		}
 
 		agentFactory := addonfactory.NewAgentAddonFactory(common.AddonName, manager.FS, "manifests/charts/managed-serviceaccount-agent").
 			WithScheme(manager.NewAgentScheme()).
 			WithConfigGVRs(utils.AddOnDeploymentConfigGVR).
 			WithConfigCheckEnabledOption().
-			WithAgentInstallNamespace(utils.AgentInstallNamespaceFromDeploymentConfigFunc(deploymentConfigGetter)).
+			WithAgentHostedModeEnabledOption().
+			// Use lease health for every manager-driven agent, including an addon
+			// taken over from an AddOnTemplate installation.
+			WithAgentHealthProber(&agent.HealthProber{Type: agent.HealthProberTypeLease}).
+			WithAgentInstallNamespace(agentInstallNamespaceFunc).
 			WithGetValuesFuncs(
 				manager.GetDefaultValues(o.AddonAgentImageName, imagePullSecret, o.EnableNetworkPolicies),
 				addonfactory.GetAgentImageValues(
@@ -219,6 +245,7 @@ func (o *HubManagerOptions) Run() error {
 					deploymentConfigGetter,
 					addonfactory.ToAddOnDeploymentConfigValues,
 					manager.ToAddOnPrometheusValues,
+					manager.ValidateAddOnAgentVariables,
 				),
 			).
 			WithAgentRegistrationOption(manager.NewRegistrationOption(nativeClient)).
@@ -232,6 +259,11 @@ func (o *HubManagerOptions) Run() error {
 
 		if err := addonManager.AddAgent(agentAddOn); err != nil {
 			setupLog.Error(err, "unable to register addon agent")
+			os.Exit(1)
+		}
+
+		if err := mgr.Add(addonManagerRunnable{start: addonManager.Start}); err != nil {
+			setupLog.Error(err, "unable to register addon manager")
 			os.Exit(1)
 		}
 
@@ -262,18 +294,66 @@ func (o *HubManagerOptions) Run() error {
 	ctx, cancel := context.WithCancel(ctrl.SetupSignalHandler())
 	defer cancel()
 
-	if o.DeployMode != "AddOnTemplate" {
-		if err := addonManager.Start(ctx); err != nil {
-			setupLog.Error(err, "unable to start addon agent")
-			os.Exit(1)
-		}
-	}
-
 	if err := mgr.Start(ctx); err != nil {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)
 	}
 	return nil
+}
+
+func managedServiceAccountCacheOptions(deployMode string) cache.Options {
+	if deployMode == deployModeAddOnTemplate {
+		return cache.Options{}
+	}
+
+	return cache.Options{ByObject: map[client.Object]cache.ByObject{
+		&addonv1beta1.ManagedClusterAddOn{}: {
+			Field: fields.OneTermEqualSelector("metadata.name", common.AddonName),
+		},
+	}}
+}
+
+// addonManagerRunnable preserves the addon manager's leader-elected placement
+// while making the requirement independent of controller-runtime defaults.
+type addonManagerRunnable struct {
+	start func(context.Context) error
+}
+
+func (r addonManagerRunnable) Start(ctx context.Context) error {
+	return r.start(ctx)
+}
+
+func (addonManagerRunnable) NeedLeaderElection() bool {
+	return true
+}
+
+// cachedAddOnDeploymentConfigGetter replaces the addon client backed
+// utils.NewAddOnDeploymentConfigGetter with a manager-cache read: the install
+// namespace uniqueness check resolves every peer addon's
+// deployment config per render, which must not become per-render hub API GETs.
+type cachedAddOnDeploymentConfigGetter struct {
+	reader client.Reader
+}
+
+func (g *cachedAddOnDeploymentConfigGetter) Get(
+	ctx context.Context,
+	namespace, name string,
+) (*addonv1beta1.AddOnDeploymentConfig, error) {
+	config := &addonv1beta1.AddOnDeploymentConfig{}
+	if err := g.reader.Get(ctx, client.ObjectKey{Namespace: namespace, Name: name}, config); err != nil {
+		return nil, err
+	}
+	return config, nil
+}
+
+func (o *HubManagerOptions) validateDeployMode() error {
+	switch o.DeployMode {
+	case deployModeDeployment, deployModeAddOnTemplate:
+		return nil
+	default:
+		return fmt.Errorf("unsupported --deploy-mode %q, must be %q or %q",
+			o.DeployMode, deployModeDeployment, deployModeAddOnTemplate)
+	}
 }
 
 func getAgentImagePullSecret(

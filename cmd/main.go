@@ -8,12 +8,15 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	utilflag "k8s.io/component-base/cli/flag"
+	"k8s.io/klog/v2"
 
 	"open-cluster-management.io/managed-serviceaccount/cmd/agent"
 	hub "open-cluster-management.io/managed-serviceaccount/cmd/manager"
+	"open-cluster-management.io/managed-serviceaccount/cmd/provisioner"
 )
 
 func main() {
+	klog.InitFlags(goflag.CommandLine)
 	pflag.CommandLine.SetNormalizeFunc(utilflag.WordSepNormalizeFunc)
 	pflag.CommandLine.AddGoFlagSet(goflag.CommandLine)
 
@@ -36,6 +39,7 @@ func newCommand() *cobra.Command {
 
 	cmd.AddCommand(hub.NewManager())
 	cmd.AddCommand(agent.NewAgent())
+	cmd.AddCommand(provisioner.NewProvisioner())
 
 	return cmd
 }

@@ -1,6 +1,6 @@
 {{- if .Values.networkPolicies.enabled }}
-# Purpose: Default-deny for managed-serviceaccount-addon-agent on the managed
-# cluster, then allow required egress (DNS + hub/spoke API). Health ingress
+# Purpose: Default-deny for managed-serviceaccount-addon-agent on the cluster
+# where it runs, then allow required egress (DNS + hub/spoke API). Health ingress
 # (:8000) allows kubelet livenessProbe /healthz. Metrics ingress (:38080) is
 # allowed only when Prometheus is enabled. Peers are port-based (empty
 # "to"/"from") for portability across Kubernetes vendors. Enabled when the hub
@@ -12,6 +12,10 @@ kind: NetworkPolicy
 metadata:
   name: managed-serviceaccount-addon-agent-network-policy
   namespace: {{ .Values.addonInstallNamespace }}
+{{- if eq .Values.installMode "Hosted" }}
+  annotations:
+    addon.open-cluster-management.io/hosted-manifest-location: hosting
+{{- end }}
   labels:
     addon-agent: managed-serviceaccount
 spec:
