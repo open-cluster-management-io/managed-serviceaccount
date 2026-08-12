@@ -177,7 +177,7 @@ test-integration:
 	@echo "TODO: Run integration test"
 
 test-e2e: build-e2e
-	./bin/e2e --test-cluster $(E2E_TEST_CLUSTER_NAME) $(GENKGO_ARGS)
+	./bin/e2e --test-cluster $(E2E_TEST_CLUSTER_NAME) $(GINKGO_ARGS)
 
 code-gen: client-gen lister-gen informer-gen ## Generate clientset, listers and informers
 	hack/code_gen.sh

@@ -227,11 +227,11 @@ jobs:
             --set targetCluster=loopback
       - name: Run e2e test
         run: |
-          make test-e2e GENKGO_ARGS='--ginkgo.label-filter='\''!ephemeral&&!install'\'''
+          make test-e2e GINKGO_ARGS='--ginkgo.label-filter='\''!ephemeral&&!install'\'''
           # run ephemeral tests after non-ephemeral and non-install tests to wait for the addon agent to be steady
-          make test-e2e GENKGO_ARGS='--ginkgo.label-filter=ephemeral'
+          make test-e2e GINKGO_ARGS='--ginkgo.label-filter=ephemeral'
           # run install tests after non-ephemeral tests since it may cause the addon agent to be restarted
-          make test-e2e GENKGO_ARGS='--ginkgo.label-filter='\''install&&!deployment-install'\'''
+          make test-e2e GINKGO_ARGS='--ginkgo.label-filter='\''install&&!deployment-install'\'''
       - name: Dump e2e diagnostics
         if: failure()
         run: |
