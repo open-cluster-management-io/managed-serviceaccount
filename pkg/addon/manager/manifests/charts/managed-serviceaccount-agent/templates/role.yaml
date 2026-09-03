@@ -19,3 +19,8 @@ rules:
 - apiGroups: ["authentication.k8s.io"]
   resources: ["tokenrequests"]
   verbs: ["get", "create", "update", "patch"]
+{{- if .Values.Prometheus.Enabled }}
+- apiGroups: ["monitoring.coreos.com"]
+  resources: ["servicemonitors"]
+  verbs: ["get", "create", "update"]
+{{- end }}

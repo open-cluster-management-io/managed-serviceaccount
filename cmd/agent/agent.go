@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"crypto/tls"
+	"encoding/json"
 	"flag"
 	"net/http"
 	"os"
@@ -15,6 +16,7 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
@@ -31,6 +33,7 @@ import (
 	authv1beta1 "open-cluster-management.io/managed-serviceaccount/apis/authentication/v1beta1"
 	"open-cluster-management.io/managed-serviceaccount/pkg/addon/agent/controller"
 	"open-cluster-management.io/managed-serviceaccount/pkg/addon/agent/health"
+	"open-cluster-management.io/managed-serviceaccount/pkg/addon/agent/servicemonitor"
 	"open-cluster-management.io/managed-serviceaccount/pkg/addon/commoncontroller"
 	"open-cluster-management.io/managed-serviceaccount/pkg/common"
 	"open-cluster-management.io/managed-serviceaccount/pkg/features"
@@ -80,17 +83,23 @@ func (o *AgentOptions) AddFlags(flags *pflag.FlagSet) {
 		"A set of key=value pairs that describe feature gates for alpha/experimental features. "+
 			"Options are:\n"+strings.Join(features.FeatureGates.KnownFeatures(), "\n"))
 	flags.BoolVar(&o.LeaseHealthCheck, "lease-health-check", false, "Use lease to report health check.")
+	flags.BoolVar(&o.EnableServiceMonitor, "enable-service-monitor", false,
+		"Create a ServiceMonitor on the managed cluster if the monitoring.coreos.com CRD is available.")
+	flags.StringVar(&o.ServiceMonitorLabels, "service-monitor-labels", "",
+		"JSON-encoded map of additional labels to set on the ServiceMonitor (e.g. '{\"release\":\"prometheus\"}').")
 }
 
 // AgentOptions holds configuration for agent controller
 type AgentOptions struct {
-	MetricsAddr          string
-	EnableLeaderElection bool
-	ProbeAddr            string
-	FeatureGatesFlags    map[string]bool
-	ClusterName          string
-	SpokeKubeconfig      string
-	LeaseHealthCheck     bool
+	MetricsAddr              string
+	EnableLeaderElection     bool
+	ProbeAddr                string
+	FeatureGatesFlags        map[string]bool
+	ClusterName              string
+	SpokeKubeconfig          string
+	LeaseHealthCheck         bool
+	EnableServiceMonitor     bool
+	ServiceMonitorLabels     string
 }
 
 // NewAgentOptions returns an AgentOptions
@@ -233,6 +242,29 @@ func (o *AgentOptions) Run() error {
 			klog.Fatalf("unable to create healthiness lease updater for controller %v", "ManagedServiceAccount")
 		}
 		go leaseUpdater.Start(ctx)
+	}
+
+	if o.EnableServiceMonitor {
+		smLabels := map[string]string{}
+		if o.ServiceMonitorLabels != "" {
+			if err := json.Unmarshal([]byte(o.ServiceMonitorLabels), &smLabels); err != nil {
+				klog.Fatalf("invalid --service-monitor-labels: %v", err)
+			}
+		}
+
+		dynamicClient, err := dynamic.NewForConfig(spokeCfg)
+		if err != nil {
+			klog.Fatalf("unable to build dynamic client for spoke cluster: %v", err)
+		}
+
+		smReconciler := &servicemonitor.Reconciler{
+			DiscoveryClient:      spokeNativeClient.Discovery(),
+			DynamicClient:        dynamicClient,
+			Namespace:            spokeNamespace,
+			ServiceMonitorName:   "managed-serviceaccount-addon-agent",
+			ServiceMonitorLabels: smLabels,
+		}
+		go smReconciler.Start(ctx)
 	}
 
 	cc, err := addonutils.NewConfigChecker("managed-serviceaccount-agent", o.configCheckerPaths()...)
