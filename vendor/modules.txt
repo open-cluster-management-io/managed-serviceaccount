@@ -611,6 +611,7 @@ k8s.io/client-go/discovery/fake
 k8s.io/client-go/dynamic
 k8s.io/client-go/dynamic/dynamicinformer
 k8s.io/client-go/dynamic/dynamiclister
+k8s.io/client-go/dynamic/fake
 k8s.io/client-go/features
 k8s.io/client-go/gentype
 k8s.io/client-go/informers

@@ -43,6 +43,12 @@ spec:
             - --cluster-name={{ .Values.clusterName }}
             - --kubeconfig=/etc/hub/kubeconfig
             - --lease-health-check=true
+{{- if .Values.Prometheus.Enabled }}
+            - --enable-service-monitor
+{{- with .Values.Prometheus.ServiceMonitor.Labels }}
+            - --service-monitor-labels={{ toJson . }}
+{{- end }}
+{{- end }}
           ports:
             - name: metrics
               containerPort: 38080
