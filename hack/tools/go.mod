@@ -142,7 +142,7 @@ require (
 	k8s.io/kubectl v0.35.4 // indirect
 	k8s.io/streaming v0.37.0 // indirect
 	k8s.io/utils v0.0.0-20260626114624-be93311217bd // indirect
-	open-cluster-management.io/api v1.3.0 // indirect
+	open-cluster-management.io/api v1.4.0 // indirect
 	open-cluster-management.io/cluster-proxy v0.7.0 // indirect
 	open-cluster-management.io/managed-serviceaccount v0.8.0 // indirect
 	open-cluster-management.io/ocm v1.3.1 // indirect

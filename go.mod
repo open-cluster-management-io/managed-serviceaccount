@@ -17,7 +17,7 @@ require (
 	k8s.io/klog/v2 v2.140.0
 	k8s.io/utils v0.0.0-20260626114624-be93311217bd
 	open-cluster-management.io/addon-framework v1.3.1
-	open-cluster-management.io/api v1.3.1-0.20260709055002-403378b57558
+	open-cluster-management.io/api v1.4.0
 	sigs.k8s.io/cluster-inventory-api v0.1.3
 	sigs.k8s.io/controller-runtime v0.25.0
 )
