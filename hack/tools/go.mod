@@ -130,7 +130,7 @@ require (
 	helm.sh/helm/v3 v3.20.2 // indirect
 	k8s.io/api v0.35.4 // indirect
 	k8s.io/apiextensions-apiserver v0.35.4 // indirect
-	k8s.io/apimachinery v0.37.0 // indirect
+	k8s.io/apimachinery v0.37.1 // indirect
 	k8s.io/apiserver v0.35.4 // indirect
 	k8s.io/cli-runtime v0.35.4 // indirect
 	k8s.io/client-go v0.35.4 // indirect
@@ -140,7 +140,7 @@ require (
 	k8s.io/kube-aggregator v0.35.4 // indirect
 	k8s.io/kube-openapi v0.0.0-20260721132016-d427ff9ee9ad // indirect
 	k8s.io/kubectl v0.35.4 // indirect
-	k8s.io/streaming v0.37.0 // indirect
+	k8s.io/streaming v0.37.1 // indirect
 	k8s.io/utils v0.0.0-20260626114624-be93311217bd // indirect
 	open-cluster-management.io/api v1.3.0 // indirect
 	open-cluster-management.io/cluster-proxy v0.7.0 // indirect
