@@ -37,7 +37,7 @@ import (
 	_ "k8s.io/client-go/plugin/pkg/client/auth" //nolint:revive // required for auth plugins
 	cliflag "k8s.io/component-base/cli/flag"
 	"k8s.io/klog/v2"
-	cpv1alpha1 "sigs.k8s.io/cluster-inventory-api/apis/v1alpha1"
+	cpv1alpha2 "sigs.k8s.io/cluster-inventory-api/apis/v1alpha2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
@@ -63,7 +63,7 @@ var (
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 	utilruntime.Must(authv1beta1.AddToScheme(scheme))
-	utilruntime.Must(cpv1alpha1.AddToScheme(scheme))
+	utilruntime.Must(cpv1alpha2.AddToScheme(scheme))
 	//+kubebuilder:scaffold:scheme
 }
 
