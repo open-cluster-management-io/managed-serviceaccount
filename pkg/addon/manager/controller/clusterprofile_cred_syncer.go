@@ -10,7 +10,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
-	cpv1alpha1 "sigs.k8s.io/cluster-inventory-api/apis/v1alpha1"
+	cpv1alpha2 "sigs.k8s.io/cluster-inventory-api/apis/v1alpha2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
@@ -53,8 +53,8 @@ func NewClusterProfileCredSyncer(cache cache.Cache, hubClient client.Client) *Cl
 func (r *ClusterProfileCredSyncer) SetupWithManager(mgr ctrl.Manager) error {
 	// Predicate to filter only ClusterProfiles managed by this controller
 	cpFilter := func(obj client.Object) bool {
-		if cp, ok := obj.(*cpv1alpha1.ClusterProfile); ok {
-			if cp.Labels[cpv1alpha1.LabelClusterManagerKey] != ClusterProfileManagerName {
+		if cp, ok := obj.(*cpv1alpha2.ClusterProfile); ok {
+			if cp.Labels[cpv1alpha2.LabelClusterManagerKey] != ClusterProfileManagerName {
 				return false
 			}
 			_, ok := cp.Labels[clusterv1.ClusterNameLabelKey]
@@ -80,7 +80,7 @@ func (r *ClusterProfileCredSyncer) SetupWithManager(mgr ctrl.Manager) error {
 	}
 
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&cpv1alpha1.ClusterProfile{}, builder.WithPredicates(predicate.NewPredicateFuncs(cpFilter))).
+		For(&cpv1alpha2.ClusterProfile{}, builder.WithPredicates(predicate.NewPredicateFuncs(cpFilter))).
 		Watches(
 			&authv1beta1.ManagedServiceAccount{},
 			handler.EnqueueRequestsFromMapFunc(r.mapManagedServiceAccountToClusterProfile),
@@ -105,7 +105,7 @@ func (r *ClusterProfileCredSyncer) mapManagedServiceAccountToClusterProfile(ctx 
 	}
 
 	// Find all ClusterProfiles with name matching the managedserviceaccount namespace
-	cpList := &cpv1alpha1.ClusterProfileList{}
+	cpList := &cpv1alpha2.ClusterProfileList{}
 	if err := r.List(ctx, cpList); err != nil {
 		logger.Error(err, "failed to list clusterprofiles")
 		return []reconcile.Request{}
@@ -137,7 +137,7 @@ func (r *ClusterProfileCredSyncer) mapTokenSecretToClusterProfile(ctx context.Co
 	}
 
 	// Find all ClusterProfiles with name matching the secret namespace
-	cpList := &cpv1alpha1.ClusterProfileList{}
+	cpList := &cpv1alpha2.ClusterProfileList{}
 	if err := r.List(ctx, cpList); err != nil {
 		logger.Error(err, "failed to list clusterprofiles")
 		return []reconcile.Request{}
@@ -162,7 +162,7 @@ func (r *ClusterProfileCredSyncer) Reconcile(ctx context.Context, req reconcile.
 	logger.Info("Start reconcile", "namespace", req.Namespace, "name", req.Name)
 
 	// get the clusterprofile
-	cp := &cpv1alpha1.ClusterProfile{}
+	cp := &cpv1alpha2.ClusterProfile{}
 	if err := r.Get(ctx, req.NamespacedName, cp); err != nil {
 		if apierrors.IsNotFound(err) {
 			// clusterprofile is deleted, owner reference will handle cleanup automatically
@@ -200,7 +200,7 @@ func (r *ClusterProfileCredSyncer) Reconcile(ctx context.Context, req reconcile.
 }
 
 // syncCreds syncs the credential secret from a managedserviceaccount to the clusterprofile namespace
-func (r *ClusterProfileCredSyncer) syncCreds(ctx context.Context, msa *authv1beta1.ManagedServiceAccount, cp *cpv1alpha1.ClusterProfile) error {
+func (r *ClusterProfileCredSyncer) syncCreds(ctx context.Context, msa *authv1beta1.ManagedServiceAccount, cp *cpv1alpha2.ClusterProfile) error {
 	// Check if the managedserviceaccount has a token secret
 	if msa.Status.TokenSecretRef == nil {
 		logger.V(4).Info("ManagedServiceAccount has no token secret yet", "msa", msa.Name, "namespace", msa.Namespace)
@@ -261,7 +261,7 @@ func (r *ClusterProfileCredSyncer) syncCreds(ctx context.Context, msa *authv1bet
 }
 
 // buildSyncedCred builds a synced credential secret from the source secret
-func (r *ClusterProfileCredSyncer) buildSyncedCred(msa *authv1beta1.ManagedServiceAccount, cp *cpv1alpha1.ClusterProfile, syncedCredName string, sourceSecret *corev1.Secret) *corev1.Secret {
+func (r *ClusterProfileCredSyncer) buildSyncedCred(msa *authv1beta1.ManagedServiceAccount, cp *cpv1alpha2.ClusterProfile, syncedCredName string, sourceSecret *corev1.Secret) *corev1.Secret {
 	// Copy all data from source secret
 	dataCopy := make(map[string][]byte, len(sourceSecret.Data))
 	for k, v := range sourceSecret.Data {
@@ -277,8 +277,8 @@ func (r *ClusterProfileCredSyncer) buildSyncedCred(msa *authv1beta1.ManagedServi
 			},
 			OwnerReferences: []metav1.OwnerReference{
 				{
-					APIVersion: cpv1alpha1.GroupVersion.String(),
-					Kind:       cpv1alpha1.Kind,
+					APIVersion: cpv1alpha2.GroupVersion.String(),
+					Kind:       cpv1alpha2.Kind,
 					Name:       cp.Name,
 					UID:        cp.UID,
 					Controller: ptr(true),
@@ -328,7 +328,7 @@ func dataEqual(a, b map[string][]byte) bool {
 }
 
 // isOwnedByClusterProfile checks if a secret is owned by the given clusterprofile
-func isOwnedByClusterProfile(secret *corev1.Secret, cp *cpv1alpha1.ClusterProfile) bool {
+func isOwnedByClusterProfile(secret *corev1.Secret, cp *cpv1alpha2.ClusterProfile) bool {
 	for _, ownerRef := range secret.OwnerReferences {
 		if ownerRef.UID == cp.UID {
 			return true
@@ -338,7 +338,7 @@ func isOwnedByClusterProfile(secret *corev1.Secret, cp *cpv1alpha1.ClusterProfil
 }
 
 // cleanupOrphanedCreds removes synced credentials that no longer have corresponding managedserviceaccounts
-func (r *ClusterProfileCredSyncer) cleanupOrphanedCreds(ctx context.Context, cp *cpv1alpha1.ClusterProfile, msaList []authv1beta1.ManagedServiceAccount) error {
+func (r *ClusterProfileCredSyncer) cleanupOrphanedCreds(ctx context.Context, cp *cpv1alpha2.ClusterProfile, msaList []authv1beta1.ManagedServiceAccount) error {
 	// List only secrets with LabelKeySyncedFrom label in the clusterprofile namespace
 	secretList := &corev1.SecretList{}
 	if err := r.List(ctx, secretList,

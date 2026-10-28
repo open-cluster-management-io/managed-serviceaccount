@@ -15,7 +15,7 @@ import (
 	clusterv1 "open-cluster-management.io/api/cluster/v1"
 	authv1beta1 "open-cluster-management.io/managed-serviceaccount/apis/authentication/v1beta1"
 	"open-cluster-management.io/managed-serviceaccount/pkg/common"
-	cpv1alpha1 "sigs.k8s.io/cluster-inventory-api/apis/v1alpha1"
+	cpv1alpha2 "sigs.k8s.io/cluster-inventory-api/apis/v1alpha2"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -28,7 +28,7 @@ const testClusterProfileNamespace = "test-ns"
 func TestClusterProfileCredSyncerReconcile(t *testing.T) {
 	testCases := []struct {
 		name            string
-		clusterProfile  *cpv1alpha1.ClusterProfile
+		clusterProfile  *cpv1alpha2.ClusterProfile
 		msaList         []authv1beta1.ManagedServiceAccount
 		existingSecrets []corev1.Secret
 		validateFunc    func(t *testing.T, hubClient client.Client)
@@ -268,7 +268,7 @@ func TestClusterProfileCredSyncerReconcile(t *testing.T) {
 			testscheme := runtime.NewScheme()
 			authv1beta1.AddToScheme(testscheme)
 			corev1.AddToScheme(testscheme)
-			cpv1alpha1.AddToScheme(testscheme)
+			cpv1alpha2.AddToScheme(testscheme)
 
 			// Build runtime objects
 			objs := []runtime.Object{}
@@ -322,17 +322,17 @@ func TestClusterProfileCredSyncerReconcile(t *testing.T) {
 
 // clusterProfileFakeCache is a fake cache implementation for testing
 type clusterProfileFakeCache struct {
-	clusterProfile *cpv1alpha1.ClusterProfile
+	clusterProfile *cpv1alpha2.ClusterProfile
 	msaList        []authv1beta1.ManagedServiceAccount
 	secrets        []corev1.Secret
 }
 
 func (f *clusterProfileFakeCache) Get(ctx context.Context, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
 	switch v := obj.(type) {
-	case *cpv1alpha1.ClusterProfile:
+	case *cpv1alpha2.ClusterProfile:
 		if f.clusterProfile == nil {
 			return apierrors.NewNotFound(schema.GroupResource{
-				Group:    cpv1alpha1.GroupVersion.Group,
+				Group:    cpv1alpha2.GroupVersion.Group,
 				Resource: "clusterprofiles",
 			}, key.Name)
 		}
@@ -421,12 +421,12 @@ func (f *clusterProfileFakeCache) List(ctx context.Context, list client.ObjectLi
 		}
 		v.Items = filteredSecrets
 		return nil
-	case *cpv1alpha1.ClusterProfileList:
+	case *cpv1alpha2.ClusterProfileList:
 		// Return the cluster profile as a list
 		if f.clusterProfile != nil {
-			v.Items = []cpv1alpha1.ClusterProfile{*f.clusterProfile}
+			v.Items = []cpv1alpha2.ClusterProfile{*f.clusterProfile}
 		} else {
-			v.Items = []cpv1alpha1.ClusterProfile{}
+			v.Items = []cpv1alpha2.ClusterProfile{}
 		}
 		return nil
 	}
@@ -468,14 +468,14 @@ func (f *clusterProfileFakeCache) RemoveInformer(ctx context.Context, obj client
 // Test helpers and builders
 
 type clusterProfileBuilder struct {
-	cp *cpv1alpha1.ClusterProfile
+	cp *cpv1alpha2.ClusterProfile
 }
 
 func newClusterProfile(namespace, name string) *clusterProfileBuilder {
 	return &clusterProfileBuilder{
-		cp: &cpv1alpha1.ClusterProfile{
+		cp: &cpv1alpha2.ClusterProfile{
 			TypeMeta: metav1.TypeMeta{
-				APIVersion: cpv1alpha1.GroupVersion.String(),
+				APIVersion: cpv1alpha2.GroupVersion.String(),
 				Kind:       "ClusterProfile",
 			},
 			ObjectMeta: metav1.ObjectMeta{
@@ -483,12 +483,12 @@ func newClusterProfile(namespace, name string) *clusterProfileBuilder {
 				Namespace: namespace,
 				UID:       types.UID(fmt.Sprintf("test-uid-%s", name)),
 				Labels: map[string]string{
-					cpv1alpha1.LabelClusterManagerKey: ClusterProfileManagerName,
+					cpv1alpha2.LabelClusterManagerKey: ClusterProfileManagerName,
 					clusterv1.ClusterNameLabelKey:     name,
 				},
 			},
-			Spec: cpv1alpha1.ClusterProfileSpec{
-				ClusterManager: cpv1alpha1.ClusterManager{
+			Spec: cpv1alpha2.ClusterProfileSpec{
+				ClusterManager: cpv1alpha2.ClusterManager{
 					Name: ClusterProfileManagerName,
 				},
 				DisplayName: name,
@@ -497,14 +497,14 @@ func newClusterProfile(namespace, name string) *clusterProfileBuilder {
 	}
 }
 
-func (b *clusterProfileBuilder) build() *cpv1alpha1.ClusterProfile {
+func (b *clusterProfileBuilder) build() *cpv1alpha2.ClusterProfile {
 	return b.cp
 }
 
 // multiClusterProfileFakeCache is a minimal fake cache for testing map functions
 // that need to list ClusterProfiles across multiple namespaces
 type multiClusterProfileFakeCache struct {
-	clusterProfiles []cpv1alpha1.ClusterProfile
+	clusterProfiles []cpv1alpha2.ClusterProfile
 }
 
 func (f *multiClusterProfileFakeCache) Get(ctx context.Context, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
@@ -513,7 +513,7 @@ func (f *multiClusterProfileFakeCache) Get(ctx context.Context, key client.Objec
 
 func (f *multiClusterProfileFakeCache) List(ctx context.Context, list client.ObjectList, opts ...client.ListOption) error {
 	switch v := list.(type) {
-	case *cpv1alpha1.ClusterProfileList:
+	case *cpv1alpha2.ClusterProfileList:
 		v.Items = f.clusterProfiles
 		return nil
 	}
@@ -633,11 +633,11 @@ func (b *secretBuilder) withToken(token []byte) *secretBuilder {
 	return b
 }
 
-func (b *secretBuilder) withOwnerReference(cp *cpv1alpha1.ClusterProfile) *secretBuilder {
+func (b *secretBuilder) withOwnerReference(cp *cpv1alpha2.ClusterProfile) *secretBuilder {
 	b.secret.OwnerReferences = []metav1.OwnerReference{
 		{
-			APIVersion: cpv1alpha1.GroupVersion.String(),
-			Kind:       cpv1alpha1.Kind,
+			APIVersion: cpv1alpha2.GroupVersion.String(),
+			Kind:       cpv1alpha2.Kind,
 			Name:       cp.Name,
 			UID:        cp.UID,
 			Controller: ptr(true),
@@ -654,7 +654,7 @@ func TestMapManagedServiceAccountToClusterProfile(t *testing.T) {
 	testCases := []struct {
 		name             string
 		msa              *authv1beta1.ManagedServiceAccount
-		clusterProfiles  []cpv1alpha1.ClusterProfile
+		clusterProfiles  []cpv1alpha2.ClusterProfile
 		expectedRequests int
 	}{
 		{
@@ -668,7 +668,7 @@ func TestMapManagedServiceAccountToClusterProfile(t *testing.T) {
 					},
 				},
 			},
-			clusterProfiles: []cpv1alpha1.ClusterProfile{
+			clusterProfiles: []cpv1alpha2.ClusterProfile{
 				*newClusterProfile(testClusterProfileNamespace, "cluster1").build(),
 			},
 			expectedRequests: 1,
@@ -684,7 +684,7 @@ func TestMapManagedServiceAccountToClusterProfile(t *testing.T) {
 					},
 				},
 			},
-			clusterProfiles: []cpv1alpha1.ClusterProfile{
+			clusterProfiles: []cpv1alpha2.ClusterProfile{
 				*newClusterProfile(testClusterProfileNamespace, "cluster1").build(),
 				*newClusterProfile("tenant-a", "cluster1").build(),
 				*newClusterProfile("tenant-b", "cluster1").build(),
@@ -702,7 +702,7 @@ func TestMapManagedServiceAccountToClusterProfile(t *testing.T) {
 					},
 				},
 			},
-			clusterProfiles: []cpv1alpha1.ClusterProfile{
+			clusterProfiles: []cpv1alpha2.ClusterProfile{
 				*newClusterProfile(testClusterProfileNamespace, "cluster2").build(),
 			},
 			expectedRequests: 0,
@@ -737,7 +737,7 @@ func TestMapTokenSecretToClusterProfile(t *testing.T) {
 	testCases := []struct {
 		name             string
 		secret           client.Object
-		clusterProfiles  []cpv1alpha1.ClusterProfile
+		clusterProfiles  []cpv1alpha2.ClusterProfile
 		expectedRequests int
 		expectedName     string
 	}{
@@ -752,7 +752,7 @@ func TestMapTokenSecretToClusterProfile(t *testing.T) {
 					},
 				},
 			},
-			clusterProfiles: []cpv1alpha1.ClusterProfile{
+			clusterProfiles: []cpv1alpha2.ClusterProfile{
 				*newClusterProfile(testClusterProfileNamespace, "cluster1").build(),
 			},
 			expectedRequests: 1,
@@ -769,7 +769,7 @@ func TestMapTokenSecretToClusterProfile(t *testing.T) {
 					},
 				},
 			},
-			clusterProfiles: []cpv1alpha1.ClusterProfile{
+			clusterProfiles: []cpv1alpha2.ClusterProfile{
 				*newClusterProfile(testClusterProfileNamespace, "cluster1").build(),
 				*newClusterProfile("tenant-a", "cluster1").build(),
 			},
@@ -784,7 +784,7 @@ func TestMapTokenSecretToClusterProfile(t *testing.T) {
 					Namespace: "cluster2",
 				},
 			},
-			clusterProfiles: []cpv1alpha1.ClusterProfile{
+			clusterProfiles: []cpv1alpha2.ClusterProfile{
 				*newClusterProfile(testClusterProfileNamespace, "cluster1").build(),
 			},
 			expectedRequests: 0,
@@ -817,7 +817,7 @@ func TestTokenRotationTriggersSync(t *testing.T) {
 	// the synced credential is updated accordingly
 	testCases := []struct {
 		name              string
-		clusterProfile    *cpv1alpha1.ClusterProfile
+		clusterProfile    *cpv1alpha2.ClusterProfile
 		msaList           []authv1beta1.ManagedServiceAccount
 		existingSecrets   []corev1.Secret
 		updatedTokenValue []byte
@@ -909,7 +909,7 @@ func TestTokenRotationTriggersSync(t *testing.T) {
 			testscheme := runtime.NewScheme()
 			authv1beta1.AddToScheme(testscheme)
 			corev1.AddToScheme(testscheme)
-			cpv1alpha1.AddToScheme(testscheme)
+			cpv1alpha2.AddToScheme(testscheme)
 
 			// Build runtime objects
 			objs := []runtime.Object{}

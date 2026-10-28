@@ -19,7 +19,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	clientauthenticationv1 "k8s.io/client-go/pkg/apis/clientauthentication/v1"
-	cpv1alpha1 "sigs.k8s.io/cluster-inventory-api/apis/v1alpha1"
+	cpv1alpha2 "sigs.k8s.io/cluster-inventory-api/apis/v1alpha2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	clusterv1 "open-cluster-management.io/api/cluster/v1"
@@ -47,18 +47,18 @@ func createClusterProfileFixture(f framework.Framework, namespace, targetCluster
 	Expect(err).NotTo(HaveOccurred())
 
 	By("Creating ClusterProfile for target cluster: " + targetClusterName)
-	clusterProfile := &cpv1alpha1.ClusterProfile{
+	clusterProfile := &cpv1alpha2.ClusterProfile{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      targetClusterName,
 			Namespace: namespace,
 			Labels: map[string]string{
-				cpv1alpha1.LabelClusterManagerKey: controller.ClusterProfileManagerName,
+				cpv1alpha2.LabelClusterManagerKey: controller.ClusterProfileManagerName,
 				clusterv1.ClusterNameLabelKey:     targetClusterName,
 			},
 		},
-		Spec: cpv1alpha1.ClusterProfileSpec{
+		Spec: cpv1alpha2.ClusterProfileSpec{
 			DisplayName: targetClusterName,
-			ClusterManager: cpv1alpha1.ClusterManager{
+			ClusterManager: cpv1alpha2.ClusterManager{
 				Name: controller.ClusterProfileManagerName,
 			},
 		},
@@ -100,7 +100,7 @@ func cleanupClusterProfileFixture(ctx context.Context, f framework.Framework, na
 	}
 
 	By("Cleaning up ClusterProfile: " + namespace + "/" + targetClusterName)
-	clusterProfile := &cpv1alpha1.ClusterProfile{
+	clusterProfile := &cpv1alpha2.ClusterProfile{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: namespace,
 			Name:      targetClusterName,
@@ -429,7 +429,7 @@ var _ = Describe("ClusterProfile Credentials Sync and Plugin Test", Label("clust
 				}).WithTimeout(pollTimeout).WithPolling(pollInterval).Should(BeTrue())
 
 				By("Deleting ClusterProfile")
-				clusterProfile := &cpv1alpha1.ClusterProfile{
+				clusterProfile := &cpv1alpha2.ClusterProfile{
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace: clusterProfileNamespace,
 						Name:      targetClusterName,
