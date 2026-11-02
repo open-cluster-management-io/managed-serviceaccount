@@ -9,11 +9,11 @@ require (
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
 	github.com/stretchr/testify v1.12.1
-	k8s.io/api v0.37.1
-	k8s.io/apimachinery v0.37.1
-	k8s.io/apiserver v0.37.1
-	k8s.io/client-go v0.37.1
-	k8s.io/component-base v0.37.1
+	k8s.io/api v0.37.2
+	k8s.io/apimachinery v0.37.2
+	k8s.io/apiserver v0.37.2
+	k8s.io/client-go v0.37.2
+	k8s.io/component-base v0.37.2
 	k8s.io/klog/v2 v2.140.0
 	k8s.io/utils v0.0.0-20260626114624-be93311217bd
 	open-cluster-management.io/addon-framework v1.4.0
